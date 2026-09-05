@@ -5,9 +5,14 @@ import { resolveAutocompleteSettings } from "./config";
 import { buildPromptContext } from "./context";
 import { postprocessCompletion } from "./postprocess";
 import { CompletionDebouncer } from "./debounce";
+import {
+  MIN_SELECTED_CHARS,
+  hasMultipleSelections,
+  isTrackedScheme,
+  resolveTypedContext,
+  type TypedContext,
+} from "./vscode-context";
 
-const ALLOWED_SCHEMES = new Set(["file", "untitled", "vscode-notebook-cell"]);
-const MIN_SELECTED_CHARS = 4;
 export const AUTOCOMPLETE_ACCEPTED_COMMAND = "inceptionCopilot.autocomplete.accepted";
 
 export type ApiKeyResolver = () => Promise<string | undefined>;
@@ -18,13 +23,6 @@ export type ApiKeyResolver = () => Promise<string | undefined>;
  * replace-to-end-of-line while the suggest widget is open), which is what the
  * stable inline-completion API can express.
  */
-interface SuggestionRequest {
-  readonly prompt: string;
-  readonly suffix: string;
-  readonly typedText: string;
-  readonly range: vscode.Range;
-}
-
 export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemProvider, vscode.Disposable {
   private readonly debouncer = new CompletionDebouncer();
   private readonly inFlight = new Set<AbortController>();
@@ -50,11 +48,11 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
   ): Promise<vscode.InlineCompletionItem[] | undefined> {
     const settings = resolveAutocompleteSettings(vscode.workspace.getConfiguration("inceptionCopilot"));
     if (!settings.enabled || token.isCancellationRequested) return undefined;
-    if (!ALLOWED_SCHEMES.has(document.uri.scheme)) return undefined;
-    if (this.hasMultipleSelections(document)) return undefined;
+    if (!isTrackedScheme(document.uri)) return undefined;
+    if (hasMultipleSelections(document)) return undefined;
 
-    const request = this.resolveRequest(document, position, context, settings);
-    if (!request) return undefined;
+    const typed = resolveTypedContext(document, position, context);
+    if (context.selectedCompletionInfo && typed.typedText.length < MIN_SELECTED_CHARS) return undefined;
 
     // Explicit invocations (e.g. inline suggest next) skip the debounce.
     if (context.triggerKind !== vscode.InlineCompletionTriggerKind.Invoke) {
@@ -67,45 +65,23 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
       this.warnMissingKey();
       return undefined;
     }
-    return await this.fetchSuggestion(settings, apiKey, request, token);
-  }
-
-  private hasMultipleSelections(document: vscode.TextDocument): boolean {
-    const editor = vscode.window.activeTextEditor;
-    if (editor?.document.uri.toString() !== document.uri.toString()) return false;
-    return (editor?.selections.length ?? 0) > 1;
-  }
-
-  private resolveRequest(
-    document: vscode.TextDocument,
-    position: vscode.Position,
-    context: vscode.InlineCompletionContext,
-    settings: { maxPromptTokens: number },
-  ): SuggestionRequest | undefined {
-    const selectedInfo = context.selectedCompletionInfo;
-    const typedText = selectedInfo?.text ?? "";
-    if (selectedInfo && typedText.length < MIN_SELECTED_CHARS) return undefined;
-
-    const fullText = document.getText();
-    const startOffset = selectedInfo ? document.offsetAt(selectedInfo.range.start) : document.offsetAt(position);
-    const endOffset = selectedInfo ? document.offsetAt(selectedInfo.range.end) : document.offsetAt(position);
-    const budgeted = buildPromptContext(
-      fullText.slice(0, startOffset) + typedText,
-      fullText.slice(endOffset),
-      settings.maxPromptTokens,
-    );
-    const range = selectedInfo
-      ? new vscode.Range(selectedInfo.range.start, document.lineAt(position.line).range.end)
-      : new vscode.Range(position, position);
-    return { prompt: budgeted.prompt, suffix: budgeted.suffix, typedText, range };
+    return await this.fetchSuggestion(settings, apiKey, document, document.version, typed, token);
   }
 
   private async fetchSuggestion(
-    settings: { model: string; maxTokens: number; requestTimeoutMs: number },
+    settings: { model: string; maxTokens: number; maxPromptTokens: number; requestTimeoutMs: number },
     apiKey: string,
-    request: SuggestionRequest,
+    document: vscode.TextDocument,
+    documentVersion: number,
+    typed: TypedContext,
     token: vscode.CancellationToken,
   ): Promise<vscode.InlineCompletionItem[] | undefined> {
+    const fullText = document.getText();
+    const budgeted = buildPromptContext(
+      fullText.slice(0, typed.startOffset) + typed.typedText,
+      fullText.slice(typed.endOffset),
+      settings.maxPromptTokens,
+    );
     const controller = new AbortController();
     this.inFlight.add(controller);
     const started = Date.now();
@@ -114,18 +90,20 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
     try {
       const completion = await this.fim.complete(apiKey, {
         model: settings.model,
-        prompt: request.prompt,
-        suffix: request.suffix,
+        prompt: budgeted.prompt,
+        suffix: budgeted.suffix,
         maxTokens: settings.maxTokens,
       }, controller.signal);
-      if (token.isCancellationRequested || controller.signal.aborted) return undefined;
+      if (token.isCancellationRequested || controller.signal.aborted || document.version !== documentVersion) {
+        return undefined;
+      }
       this.logUsage(settings.model, completion, Date.now() - started);
 
       const text = postprocessCompletion(completion.text);
       if (!text) return undefined;
-      if (request.typedText && !text.startsWith(request.typedText)) return undefined;
+      if (typed.typedText && !text.startsWith(typed.typedText)) return undefined;
 
-      const item = new vscode.InlineCompletionItem(text, request.range, {
+      const item = new vscode.InlineCompletionItem(text, typed.replaceRange, {
         title: "Log suggestion acceptance",
         command: AUTOCOMPLETE_ACCEPTED_COMMAND,
       });

@@ -15,8 +15,9 @@ The extension sends requests directly to:
 - `https://api.inceptionlabs.ai/v1/chat/completions/models` for hosted-model discovery and key validation
 - `https://api.inceptionlabs.ai/v1/chat/completions` for model responses
 - `https://api.inceptionlabs.ai/v1/fim/completions` for inline autocomplete
+- `https://api.inceptionlabs.ai/v1/edit/completions` for next-edit suggestions
 
-There is no local proxy or project-operated relay. Prompts, conversation context, tool definitions, and tool results selected by Copilot Chat are sent to Inception as part of chat-completion requests. Inline autocomplete sends the document text around the cursor (a trimmed prefix and suffix) as fill-in-the-middle context.
+There is no local proxy or project-operated relay. Prompts, conversation context, tool definitions, and tool results selected by Copilot Chat are sent to Inception as part of chat-completion requests. Inline autocomplete sends the document text around the cursor (a trimmed prefix and suffix) as fill-in-the-middle context. Next-edit suggestions send the current file (trimmed beyond a token budget), short excerpts of recently viewed files, and a diff summary of recent edits.
 
 The inference base URL is fixed in the extension instead of being workspace-configurable. This prevents an untrusted workspace setting from redirecting the saved API key to another server.
 

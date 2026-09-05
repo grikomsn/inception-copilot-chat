@@ -27,6 +27,8 @@ Alternatively, run **Inception: Configure API Key** to keep a command-managed ke
 - Streaming text, sequential tool calling, usage reporting, cancellation, and total/idle request timeouts.
 - Mercury 2 reasoning choices: **Instant**, **Low**, **Medium** (default), and **High**.
 - Inline autocomplete for any file via the Inception fill-in-the-middle endpoint and Mercury Edit, with debounce, cancellation, and a per-request timeout.
+- Next-edit suggestions via the Inception edit endpoint, using recently viewed snippets, a cursor-centered editable region, and your recent edit history.
+- Status bar menu (**$(sparkle) Mercury**) to toggle either feature, switch the completion model, and open settings.
 
 Mercury 2 currently advertises a 128,000-token context window and 50,000-token maximum output. The default request output budget is 16,384 tokens. Live model limits override fallback metadata. Token counting is an estimate (characters divided by four).
 
@@ -34,7 +36,13 @@ Mercury 2 currently advertises a 128,000-token context window and 50,000-token m
 
 Inline suggestions come from the Mercury Edit fill-in-the-middle endpoint, separate from Copilot Chat's model picker. Suggestions are insertions at the cursor (or a replace-to-end-of-line while the IntelliSense widget is open); multi-line edits and deletions are not provided.
 
-Multiple inline-completion extensions can compete for Tab. For the best experience, disable other providers (for example `editor.inlineSuggest` toggles the feature globally, and GitHub Copilot's own suggestions can be turned off per language).
+## Next edit
+
+Next-edit suggestions watch your recent edits and cursor positions in other files, send a cursor-centered editable region (default 15 lines) plus recent snippets and a diff history to the Inception edit endpoint, and show the predicted change inline. The stable VS Code inline-completion API can only express insertions and single-line replacements, so multi-line rewrites and deletions are skipped rather than approximated.
+
+## Using both with Copilot
+
+Multiple inline-completion extensions can compete for Tab. For the best experience, disable other providers (for example `editor.inlineSuggest` toggles the feature globally, and GitHub Copilot's own suggestions can be turned off per language). Both Inception features can be toggled independently from the status bar menu or disabled in settings.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
@@ -44,6 +52,15 @@ Multiple inline-completion extensions can compete for Tab. For the best experien
 | `inceptionCopilot.autocomplete.maxTokens` | `256` | Tokens generated per suggestion |
 | `inceptionCopilot.autocomplete.maxPromptTokens` | `8192` | Prompt context budget; the prefix keeps three quarters |
 | `inceptionCopilot.autocomplete.requestTimeoutMs` | `5000` | Per-request timeout in milliseconds |
+| `inceptionCopilot.nextEdit.enabled` | `true` | Provide next-edit suggestions |
+| `inceptionCopilot.nextEdit.model` | `mercury-edit-2` | Edit model used for suggestions |
+| `inceptionCopilot.nextEdit.debounceMs` | `150` | Delay after typing stops; explicit invocations skip it |
+| `inceptionCopilot.nextEdit.maxTokens` | `1024` | Tokens generated for the updated region |
+| `inceptionCopilot.nextEdit.editableLines` | `15` | Editable-region size around the cursor in lines |
+| `inceptionCopilot.nextEdit.maxPromptTokens` | `16384` | Current-file context budget; distant regions are trimmed |
+| `inceptionCopilot.nextEdit.snippetContextLines` | `10` | Context lines captured for recently viewed snippets |
+| `inceptionCopilot.nextEdit.historyDepth` | `5` | Recent edits sent as diff history; 0 disables |
+| `inceptionCopilot.nextEdit.requestTimeoutMs` | `8000` | Per-request timeout in milliseconds |
 
 ## Settings
 

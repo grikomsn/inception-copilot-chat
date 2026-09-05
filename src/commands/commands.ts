@@ -1,9 +1,11 @@
 /** User-facing Inception commands and connection workflows. */
 
 import * as vscode from "vscode";
+import { resolveAutocompleteSettings, resolveNextEditSettings } from "../autocomplete/config";
 import { InceptionAuth } from "../auth/auth";
 import { messageOf } from "../errors";
-import { API_BASE, InceptionProvider } from "../provider";
+import { InceptionProvider } from "../provider";
+import { API_BASE, INCEPTION_ENDPOINTS } from "../transport/protocol";
 
 const API_KEYS_URL = "https://platform.inceptionlabs.ai/dashboard/api-keys";
 
@@ -131,13 +133,19 @@ async function openApiKeys(): Promise<void> {
 
 async function diagnostics(auth: InceptionAuth, output: vscode.OutputChannel): Promise<void> {
   const models = await vscode.lm.selectChatModels({ vendor: "inception" });
+  const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
+  const autocomplete = resolveAutocompleteSettings(configuration);
+  const nextEdit = resolveNextEditSettings(configuration);
   const lines = [
     "# Inception for Copilot Chat diagnostics",
     "",
     `- VS Code: ${vscode.version}`,
     `- API endpoint: ${API_BASE}`,
+    `- Completion endpoints: ${INCEPTION_ENDPOINTS.fim}, ${INCEPTION_ENDPOINTS.edit}`,
     `- API key: ${(await auth.hasApiKey()) ? "configured in Secret Storage" : "missing"}`,
-    `- Default reasoning effort: ${vscode.workspace.getConfiguration("inceptionCopilot").get("reasoningEffort", "medium")}`,
+    `- Default reasoning effort: ${configuration.get("reasoningEffort", "medium")}`,
+    `- Inline autocomplete: ${featureState(autocomplete)}`,
+    `- Next edit suggestions: ${featureState(nextEdit)}`,
     `- Registered models: ${models.length}`,
     "",
     ...models.map((model) => `- ${model.id} (${model.maxInputTokens} input tokens)`),
@@ -145,4 +153,8 @@ async function diagnostics(auth: InceptionAuth, output: vscode.OutputChannel): P
   output.appendLine(`[diagnostics] models=${models.length}`);
   const doc = await vscode.workspace.openTextDocument({ content: lines.join("\n"), language: "markdown" });
   await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+}
+
+function featureState(settings: { enabled: boolean; model: string }): string {
+  return settings.enabled ? `on (${settings.model})` : "off";
 }

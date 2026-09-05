@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveAutocompleteSettings, type ConfigurationReader } from "./config";
+import {
+  AUTOCOMPLETE_DEFAULTS,
+  NEXT_EDIT_DEFAULTS,
+  resolveAutocompleteSettings,
+  resolveNextEditSettings,
+  type ConfigurationReader,
+} from "./config";
 
-function reader(values: Record<string, unknown>): ConfigurationReader {
-  return { get: <T>(section: string): T | undefined => (section === "autocomplete" ? (values as T) : undefined) };
+function reader(values: Record<string, unknown>, section = "autocomplete"): ConfigurationReader {
+  return { get: <T>(name: string): T | undefined => (name === section ? (values as T) : undefined) };
 }
 
 test("falls back to defaults when the section is missing", () => {
@@ -53,4 +59,41 @@ test("ignores invalid types", () => {
   assert.equal(settings.enabled, true);
   assert.equal(settings.model, "mercury-edit-2");
   assert.equal(settings.debounceMs, 100);
+});
+
+test("falls back to next-edit defaults when the section is missing", () => {
+  const settings = resolveNextEditSettings(undefined);
+  assert.deepEqual(settings, NEXT_EDIT_DEFAULTS);
+  assert.deepEqual(AUTOCOMPLETE_DEFAULTS.enabled, true);
+});
+
+test("clamps next-edit values into their documented ranges", () => {
+  const settings = resolveNextEditSettings(reader({
+    debounceMs: -5,
+    maxTokens: 99999,
+    editableLines: 1,
+    maxPromptTokens: 1,
+    snippetContextLines: 100,
+    historyDepth: 99,
+    requestTimeoutMs: 10,
+  }, "nextEdit"));
+  assert.equal(settings.debounceMs, 0);
+  assert.equal(settings.maxTokens, 8192);
+  assert.equal(settings.editableLines, 5);
+  assert.equal(settings.maxPromptTokens, 1024);
+  assert.equal(settings.snippetContextLines, 50);
+  assert.equal(settings.historyDepth, 10);
+  assert.equal(settings.requestTimeoutMs, 1000);
+});
+
+test("honors explicit next-edit values", () => {
+  const settings = resolveNextEditSettings(reader({
+    enabled: false,
+    model: " mercury-coder ",
+    editableLines: 20,
+  }, "nextEdit"));
+  assert.equal(settings.enabled, false);
+  assert.equal(settings.model, "mercury-coder");
+  assert.equal(settings.editableLines, 20);
+  assert.equal(settings.debounceMs, NEXT_EDIT_DEFAULTS.debounceMs);
 });
