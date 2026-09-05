@@ -11,7 +11,8 @@
 - `src/extension.ts`: activation and dependency wiring.
 - `src/commands/commands.ts`: user-facing commands, connection UI, and diagnostics.
 - `src/auth/auth.ts`: API-key Secret Storage and credential references.
-- `src/provider.ts`: VS Code provider integration, model-entry credentials, request conversion, and response reporting.
+- `src/provider.ts`: VS Code provider integration, model-entry credentials, model discovery, and request lifecycle.
+- `src/provider/`: message conversion, request construction, and response reporting.
 - `src/models/catalog.ts`: hosted-model filtering, fallbacks, and display metadata.
 - `src/models/options.ts`: reasoning-effort schema, precedence, and Inception request payload translation.
 - `src/transport/protocol.ts`: fixed endpoints, request identity, and headers.

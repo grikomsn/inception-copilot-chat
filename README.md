@@ -1,6 +1,16 @@
-# Inception for GitHub Copilot Chat
+<p align="center">
+  <img src="https://raw.githubusercontent.com/grikomsn/inception-copilot-chat/main/assets/cover.jpg" alt="Inception and GitHub Copilot" width="960">
+</p>
 
-Use Inception Mercury models in VS Code Copilot Chat with your own API key.
+<h1 align="center">Inception for GitHub Copilot Chat</h1>
+
+<p align="center">Use Inception Mercury models directly from the GitHub Copilot Chat model picker in Visual Studio Code.</p>
+
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=grikomsn.inception-copilot-chat"><img src="https://img.shields.io/visual-studio-marketplace/v/grikomsn.inception-copilot-chat?style=flat-square&logo=visualstudiocode&label=Marketplace" alt="Visual Studio Marketplace version"></a>
+  <a href="https://github.com/grikomsn/inception-copilot-chat/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/grikomsn/inception-copilot-chat/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
+  <a href="https://github.com/grikomsn/inception-copilot-chat/blob/main/LICENSE"><img src="https://img.shields.io/github/license/grikomsn/inception-copilot-chat?style=flat-square" alt="MIT license"></a>
+</p>
 
 ## Setup
 

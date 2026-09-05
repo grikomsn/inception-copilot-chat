@@ -7,7 +7,6 @@ import {
   formatTokenLimit,
   formatModelName,
   orderModelMetadata,
-  resolveMaxOutputTokens,
   type InceptionApiModel,
   type InceptionModelMetadata,
 } from "./models/catalog";
@@ -18,9 +17,11 @@ import {
   resolveReasoningEffort,
   type ReasoningEffort,
 } from "./models/options";
-import { ChatCompletionStreamParser, type ChatStreamEvent, validateStreamCompletion } from "./transport/sse";
+import { ChatCompletionStreamParser, validateStreamCompletion } from "./transport/sse";
 import { INCEPTION_ENDPOINTS, inceptionHeaders } from "./transport/protocol";
-import { toProviderUsagePayload } from "./usage/domain";
+import { reportEvent } from "./provider/response";
+import { buildRequest } from "./provider/request";
+import { messageToText } from "./provider/messages";
 import { apiKeyFromConfiguration, credentialRefForApiKey, qualifiedModelId } from "./provider-profile";
 
 export { API_BASE } from "./transport/protocol";
@@ -28,19 +29,6 @@ export { API_BASE } from "./transport/protocol";
 export interface InceptionModel extends vscode.LanguageModelChatInformation {
   rawModelId: string;
   credentialRef: string;
-}
-
-interface ApiMessage {
-  role: "user" | "assistant" | "tool";
-  content: string | null;
-  tool_calls?: ApiToolCall[];
-  tool_call_id?: string;
-}
-
-interface ApiToolCall {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
 }
 
 export class InceptionProvider implements vscode.LanguageModelChatProvider<InceptionModel> {
@@ -160,7 +148,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       options.modelConfiguration,
       this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
     );
-    const requestBody = buildRequest(model.rawModelId, messages, options, reasoningEffort, model.maxOutputTokens);
+    const requestBody = buildRequest(model.rawModelId, messages, options, reasoningEffort, model.maxOutputTokens, this.configuration.get("maxOutputTokens", 16384));
     const controller = new AbortController();
     const cancellation = token.onCancellationRequested(() => controller.abort());
     const timeoutSeconds = Math.max(10, this.configuration.get("requestTimeoutSeconds", 600));
@@ -204,10 +192,10 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
         if (result.done) break;
         resetIdleTimeout();
         for (const event of parser.push(decoder.decode(result.value, { stream: true }))) {
-          this.reportEvent(event, progress);
+          reportEvent(event, progress, this.output, this.debugLogging);
         }
       }
-      for (const event of parser.finish()) this.reportEvent(event, progress);
+      for (const event of parser.finish()) reportEvent(event, progress, this.output, this.debugLogging);
       validateStreamCompletion(parser.finishReason);
     } catch (error) {
       if (token.isCancellationRequested) return;
@@ -315,133 +303,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     return inceptionHeaders(apiKey, accept, this.userAgent);
   }
 
-  private reportEvent(
-    event: ChatStreamEvent,
-    progress: vscode.Progress<vscode.LanguageModelResponsePart2>,
-  ): void {
-    if (event.text) progress.report(new vscode.LanguageModelTextPart(event.text));
-    if (event.reasoning) {
-      const ThinkingPart = (vscode as unknown as { LanguageModelThinkingPart?: typeof vscode.LanguageModelThinkingPart })
-        .LanguageModelThinkingPart;
-      if (ThinkingPart) progress.report(new ThinkingPart(event.reasoning));
-    }
-    for (const tool of event.toolCalls ?? []) {
-      progress.report(new vscode.LanguageModelToolCallPart(
-        tool.id || `inception-tool-${Date.now()}`,
-        tool.name,
-        parseArguments(tool.arguments),
-      ));
-    }
-    if (event.usage) {
-      const payload = toProviderUsagePayload(event.usage);
-      if (this.debugLogging) this.output.appendLine(`[usage] ${JSON.stringify(payload)}`);
-      progress.report(new vscode.LanguageModelDataPart(
-        new TextEncoder().encode(JSON.stringify(payload)),
-        "usage",
-      ));
-    }
-  }
-}
 
-function buildRequest(
-  model: string,
-  messages: readonly vscode.LanguageModelChatRequestMessage[],
-  options: vscode.ProvideLanguageModelChatResponseOptions,
-  reasoningEffort: ReasoningEffort,
-  advertisedMaxTokens: number,
-): Record<string, unknown> {
-  const configuredMaxTokens = vscode.workspace
-    .getConfiguration("inceptionCopilot")
-    .get("maxOutputTokens", 16384);
-  const maxTokens = resolveMaxOutputTokens(configuredMaxTokens, advertisedMaxTokens);
-  const tools = (options.tools ?? []).map((tool) => ({
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: sanitizeSchema(tool.inputSchema),
-    },
-  }));
-  return applyReasoningEffort({
-    model,
-    messages: normalizeMessages(messages.flatMap(convertMessage)),
-    stream: true,
-    stream_options: { include_usage: true },
-    max_completion_tokens: maxTokens,
-    ...(tools.length ? { tools, tool_choice: toolMode(options.toolMode) } : {}),
-  }, reasoningEffort);
-}
-
-function convertMessage(message: vscode.LanguageModelChatRequestMessage): ApiMessage[] {
-  const role = message.role === vscode.LanguageModelChatMessageRole.Assistant ? "assistant" : "user";
-  const text: string[] = [];
-  const toolCalls: ApiToolCall[] = [];
-  const results: ApiMessage[] = [];
-
-  for (const part of message.content) {
-    if (part instanceof vscode.LanguageModelTextPart) text.push(part.value);
-    else if (part instanceof vscode.LanguageModelToolCallPart) {
-      toolCalls.push({
-        id: part.callId,
-        type: "function",
-        function: { name: part.name, arguments: JSON.stringify(part.input ?? {}) },
-      });
-    } else if (part instanceof vscode.LanguageModelToolResultPart) {
-      results.push({ role: "tool", tool_call_id: part.callId, content: part.content.map(inputPartText).join("\n") });
-    } else if (part instanceof vscode.LanguageModelDataPart && part.mimeType.startsWith("image/")) {
-      throw new Error("Inception hosted models are text-only. Remove image attachments and try again.");
-    }
-  }
-
-  const content = text.join("\n");
-  if (role === "assistant" && toolCalls.length) {
-    return [{ role, content: content || null, tool_calls: toolCalls }];
-  }
-  if (results.length) return content ? [{ role, content }, ...results] : results;
-  return [{ role, content }];
-}
-
-function normalizeMessages(messages: ApiMessage[]): ApiMessage[] {
-  const filtered = messages.filter((message) =>
-    Boolean(message.tool_calls?.length || message.tool_call_id || message.content),
-  );
-  if (filtered[0]?.role === "assistant") {
-    filtered.unshift({ role: "user", content: "Continue from the previous assistant response." });
-  }
-  return filtered.length ? filtered : [{ role: "user", content: "" }];
-}
-
-function inputPartText(part: vscode.LanguageModelInputPart | unknown): string {
-  if (part instanceof vscode.LanguageModelTextPart) return part.value;
-  if (part instanceof vscode.LanguageModelToolCallPart) return JSON.stringify(part.input ?? {});
-  if (part instanceof vscode.LanguageModelToolResultPart) return part.content.map(inputPartText).join("\n");
-  if (part instanceof vscode.LanguageModelDataPart) return `[${part.mimeType} data omitted]`;
-  if (typeof part === "string") return part;
-  return "";
-}
-
-function messageToText(message: vscode.LanguageModelChatRequestMessage): string {
-  return message.content.map(inputPartText).join("\n");
-}
-
-function sanitizeSchema(schema: unknown): Record<string, unknown> {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
-    return { type: "object", properties: {} };
-  }
-  return schema as Record<string, unknown>;
-}
-
-function toolMode(mode: vscode.LanguageModelChatToolMode | undefined): "auto" | "required" {
-  return mode === vscode.LanguageModelChatToolMode.Required ? "required" : "auto";
-}
-
-function parseArguments(value: string): object {
-  try {
-    const parsed = JSON.parse(value || "{}");
-    return typeof parsed === "object" && parsed !== null ? parsed : { value: parsed };
-  } catch {
-    return { value };
-  }
 }
 
 async function apiError(prefix: string, response: Response): Promise<Error> {
