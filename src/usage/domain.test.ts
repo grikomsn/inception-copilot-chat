@@ -117,7 +117,8 @@ test("merges snapshots across credentials", () => {
 test("formats the status bar for tracked, errored, and fresh sessions", () => {
   const tracked = recordRequestUsage(undefined, { prompt_tokens: 1_400_000, completion_tokens: 100_000, total_tokens: 1_500_000 }, "mercury-2", 1000);
   assert.equal(formatUsageStatusBar(tracked), "$(graph) Inception 1.5M");
-  assert.equal(formatUsageStatusBar({}), "$(pulse) Inception usage");
+  assert.equal(formatUsageStatusBar({}), "$(sparkle) Inception");
+  assert.equal(formatUsageStatusBar({}, false), "$(key) Inception");
   assert.equal(formatUsageStatusBar(mergeUsageError(undefined, "HTTP 402")), "$(warning) Inception usage");
 });
 

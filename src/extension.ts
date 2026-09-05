@@ -1,8 +1,12 @@
 import * as vscode from "vscode";
-import { AUTOCOMPLETE_DEFAULTS, resolveNextEditSettings } from "./autocomplete/config";
+import {
+  AUTOCOMPLETE_DEFAULTS,
+  featureState,
+  resolveAutocompleteSettings,
+  resolveNextEditSettings,
+} from "./autocomplete/config";
 import { MercuryNextEditProvider, NEXT_EDIT_ACCEPTED_COMMAND } from "./autocomplete/next-edit-provider";
 import { MercuryAutocompleteProvider, AUTOCOMPLETE_ACCEPTED_COMMAND } from "./autocomplete/provider";
-import { registerCompletionStatusBar } from "./autocomplete/status";
 import { EditHistoryTracker, RecentSnippetsTracker } from "./autocomplete/tracker";
 import { type InlineUsageListener } from "./autocomplete/usage";
 import { InceptionAuth } from "./auth/auth";
@@ -48,13 +52,20 @@ export function activate(context: vscode.ExtensionContext): void {
     void deliverFeedback(output, feedback, source);
   };
   const usageStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
-  usageStatus.name = "Inception usage";
+  usageStatus.name = "Inception usage and completions";
   usageStatus.command = "inceptionCopilot.showUsage";
-  const renderUsage = (): void => {
-    renderUsageStatus(usageStatus, mergeUsageSnapshots(Object.values(provider.getUsageSnapshots())));
+  const renderUsage = async (): Promise<void> => {
+    const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
+    renderUsageStatus(usageStatus, mergeUsageSnapshots(Object.values(provider.getUsageSnapshots())), {
+      hasKey: Boolean(await resolveApiKey()),
+      featureLines: [
+        `Autocomplete: ${featureState(resolveAutocompleteSettings(configuration))}`,
+        `Next Edit: ${featureState(resolveNextEditSettings(configuration))}`,
+      ],
+    });
     updateUsageStatusVisibility(usageStatus);
   };
-  renderUsage();
+  void renderUsage();
 
   context.subscriptions.push(
     output,
@@ -65,14 +76,19 @@ export function activate(context: vscode.ExtensionContext): void {
     usageStatus,
     provider.onDidChangeUsage(() => {
       void context.globalState.update(USAGE_STATE_KEY, provider.getUsageSnapshots());
-      renderUsage();
+      void renderUsage();
     }),
+    provider.onDidChangeLanguageModelChatInformation(() => void renderUsage()),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("inceptionCopilot.reasoningEffort")
         || event.affectsConfiguration("inceptionCopilot.catalogCacheMinutes")) {
         provider.fireDidChange();
       }
       if (event.affectsConfiguration("inceptionCopilot.showUsageStatusBar")) updateUsageStatusVisibility(usageStatus);
+      if (event.affectsConfiguration("inceptionCopilot.autocomplete")
+        || event.affectsConfiguration("inceptionCopilot.nextEdit")) {
+        void renderUsage();
+      }
       if (event.affectsConfiguration("inceptionCopilot.nextEdit")) {
         const settings = resolveNextEditSettings(vscode.workspace.getConfiguration("inceptionCopilot"));
         editHistory.setDepth(settings.historyDepth);
@@ -83,11 +99,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], nextEdit),
     vscode.commands.registerCommand(AUTOCOMPLETE_ACCEPTED_COMMAND, () => reportAcceptance("autocomplete", autocomplete)),
     vscode.commands.registerCommand(NEXT_EDIT_ACCEPTED_COMMAND, () => reportAcceptance("next edit", nextEdit)),
-    registerCompletionStatusBar({
+    ...registerCommands(auth, provider, output, {
       resolveApiKey,
       listModels: async () => edit.listModels((await resolveApiKey()) ?? "", [AUTOCOMPLETE_DEFAULTS.model]),
     }),
-    ...registerCommands(auth, provider, output),
   );
 
   output.appendLine(

@@ -9,13 +9,36 @@ import {
   type UsageDisplayRow,
 } from "./domain";
 
+export type UsageMenuAction =
+  | "openDashboard"
+  | "manage"
+  | "toggleAutocomplete"
+  | "toggleNextEdit"
+  | "chooseModel"
+  | "openCompletionSettings"
+  | "configureApiKey";
+
 export interface UsageQuickPickItem extends vscode.QuickPickItem {
-  readonly action?: "openDashboard";
+  readonly action?: UsageMenuAction;
 }
 
-export function renderUsageStatus(item: vscode.StatusBarItem, snapshot: InceptionUsageSnapshot): void {
-  item.text = formatUsageStatusBar(snapshot);
-  item.tooltip = formatUsageTooltip(snapshot);
+/** Extra context rendered into the merged status bar item. */
+export interface UsageStatusContext {
+  /** Whether any Inception API key (command-managed or provider entry) is available. */
+  readonly hasKey: boolean;
+  /** Completion feature lines appended to the tooltip, e.g. `Autocomplete: on (mercury-edit-2)`. */
+  readonly featureLines: readonly string[];
+}
+
+export function renderUsageStatus(
+  item: vscode.StatusBarItem,
+  snapshot: InceptionUsageSnapshot,
+  context?: UsageStatusContext,
+): void {
+  item.text = formatUsageStatusBar(snapshot, context?.hasKey ?? true);
+  const tooltip = [formatUsageTooltip(snapshot)];
+  if (context?.featureLines.length) tooltip.push("", ...context.featureLines);
+  item.tooltip = tooltip.join("\n");
 }
 
 export function updateUsageStatusVisibility(item: vscode.StatusBarItem): void {

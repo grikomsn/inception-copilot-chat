@@ -1,32 +1,45 @@
 /** User-facing Inception commands and connection workflows. */
 
 import * as vscode from "vscode";
-import { resolveAutocompleteSettings, resolveNextEditSettings } from "../autocomplete/config";
+import {
+  featureState,
+  resolveAutocompleteSettings,
+  resolveNextEditSettings,
+} from "../autocomplete/config";
 import { InceptionAuth } from "../auth/auth";
 import { messageOf } from "../errors";
 import { InceptionProvider } from "../provider";
 import { API_BASE, INCEPTION_ENDPOINTS } from "../transport/protocol";
 import { formatUsageRows, mergeUsageSnapshots } from "../usage/domain";
-import { toUsageQuickPickItem, type UsageQuickPickItem } from "../usage/presentation";
+import { toUsageQuickPickItem, type UsageMenuAction, type UsageQuickPickItem } from "../usage/presentation";
 
 const API_KEYS_URL = "https://platform.inceptionlabs.ai/dashboard/api-keys";
 const USAGE_DASHBOARD_URL = "https://platform.inceptionlabs.ai/dashboard/logs";
+
+/** Access needed by the merged status menu: completion model discovery and key state. */
+export interface StatusMenuDeps {
+  readonly resolveApiKey: () => Promise<string | undefined>;
+  readonly listModels: () => Promise<string[]>;
+}
 
 export function registerCommands(
   auth: InceptionAuth,
   provider: InceptionProvider,
   output: vscode.OutputChannel,
+  deps: StatusMenuDeps,
 ): vscode.Disposable[] {
   return [
-    vscode.commands.registerCommand("inceptionCopilot.manage", () => manage(auth, provider, output)),
+    vscode.commands.registerCommand("inceptionCopilot.manage", () => manage(auth, provider, output, deps)),
     vscode.commands.registerCommand("inceptionCopilot.configureApiKey", () => configureApiKey(provider, output)),
     vscode.commands.registerCommand("inceptionCopilot.removeApiKey", () => removeApiKey(provider)),
     vscode.commands.registerCommand("inceptionCopilot.refreshModels", () => refreshModels(provider)),
     vscode.commands.registerCommand("inceptionCopilot.testConnection", () => testConnection(provider, output)),
     vscode.commands.registerCommand("inceptionCopilot.openApiKeys", () => openApiKeys()),
     vscode.commands.registerCommand("inceptionCopilot.diagnostics", () => diagnostics(auth, output)),
-    vscode.commands.registerCommand("inceptionCopilot.showUsage", () => showUsage(provider)),
+    vscode.commands.registerCommand("inceptionCopilot.showUsage", () => showUsage(provider, auth, output, deps)),
     vscode.commands.registerCommand("inceptionCopilot.openUsage", () => openUsageDashboard()),
+    // Back-compat alias: the pre-merge completion status bar entry.
+    vscode.commands.registerCommand("inceptionCopilot.completionMenu", () => showUsage(provider, auth, output, deps)),
   ];
 }
 
@@ -34,6 +47,7 @@ async function manage(
   auth: InceptionAuth,
   provider: InceptionProvider,
   output: vscode.OutputChannel,
+  deps: StatusMenuDeps,
 ): Promise<void> {
   const configured = await auth.hasApiKey();
   const choices = configured
@@ -61,7 +75,7 @@ async function manage(
   if (picked.action === "configure") await configureApiKey(provider, output);
   else if (picked.action === "refresh") await refreshModels(provider);
   else if (picked.action === "test") await testConnection(provider, output);
-  else if (picked.action === "usage") await showUsage(provider);
+  else if (picked.action === "usage") await showUsage(provider, auth, output, deps);
   else if (picked.action === "usageDashboard") await openUsageDashboard();
   else if (picked.action === "open") await openApiKeys();
   else if (picked.action === "logs") output.show(true);
@@ -69,19 +83,89 @@ async function manage(
   else if (picked.action === "remove") await removeApiKey(provider);
 }
 
-/** QuickPick of locally tracked usage plus a deep link to the authoritative dashboard. */
-async function showUsage(provider: InceptionProvider): Promise<void> {
+/**
+ * Merged status menu: locally tracked usage rows followed by the inline
+ * completion controls (formerly the separate Mercury status bar item) and
+ * connection actions. `inceptionCopilot.completionMenu` opens the same menu.
+ */
+async function showUsage(
+  provider: InceptionProvider,
+  auth: InceptionAuth,
+  output: vscode.OutputChannel,
+  deps: StatusMenuDeps,
+): Promise<void> {
   const snapshot = mergeUsageSnapshots(Object.values(provider.getUsageSnapshots()));
-  const items: UsageQuickPickItem[] = [
-    ...formatUsageRows(snapshot).map(toUsageQuickPickItem),
-    { label: "", kind: vscode.QuickPickItemKind.Separator },
-    { label: "$(link-external) Open Inception usage dashboard", action: "openDashboard" },
+  const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
+  const autocomplete = resolveAutocompleteSettings(configuration);
+  const nextEdit = resolveNextEditSettings(configuration);
+  const hasKey = Boolean(await deps.resolveApiKey());
+
+  const entries: Array<{ item: UsageQuickPickItem; action?: UsageMenuAction }> = [
+    ...formatUsageRows(snapshot).map((row) => ({ item: toUsageQuickPickItem(row) })),
+    { item: { label: "", kind: vscode.QuickPickItemKind.Separator } },
+    {
+      action: "toggleAutocomplete",
+      item: {
+        label: `${autocomplete.enabled ? "$(check)" : "$(circle-slash)"} Inline Autocomplete`,
+        description: `${autocomplete.enabled ? "On" : "Off"} · ${autocomplete.model}`,
+      },
+    },
+    {
+      action: "toggleNextEdit",
+      item: {
+        label: `${nextEdit.enabled ? "$(check)" : "$(circle-slash)"} Next Edit Suggestions`,
+        description: `${nextEdit.enabled ? "On" : "Off"} · ${nextEdit.model}`,
+      },
+    },
+    { action: "chooseModel", item: { label: "$(zap) Choose Completion Model…", description: autocomplete.model } },
+    { action: "openCompletionSettings", item: { label: "$(gear) Open Completion Settings" } },
   ];
-  const picked = await vscode.window.showQuickPick(items, {
-    title: "Inception usage (tracked locally by this extension)",
-    placeHolder: "Counts cover Copilot Chat and inline completions on this device",
-  });
-  if (picked?.action === "openDashboard") await openUsageDashboard();
+  if (!hasKey) entries.push({ action: "configureApiKey", item: { label: "$(key) Configure API Key…" } });
+  entries.push(
+    { item: { label: "", kind: vscode.QuickPickItemKind.Separator } },
+    { action: "openDashboard", item: { label: "$(link-external) Open Inception usage dashboard" } },
+    { action: "manage", item: { label: "$(tools) Manage connection…" } },
+  );
+
+  const picked = await vscode.window.showQuickPick(
+    entries.map((entry) => entry.item),
+    {
+      title: "Inception — usage & settings",
+      placeHolder: "Local usage counts, completion controls, and connection actions",
+    },
+  );
+  const action = entries.find((entry) => entry.item === picked)?.action;
+  if (action === "toggleAutocomplete") toggleSection("autocomplete", autocomplete.enabled);
+  else if (action === "toggleNextEdit") toggleSection("nextEdit", nextEdit.enabled);
+  else if (action === "chooseModel") await chooseModel(deps, autocomplete.model);
+  else if (action === "openCompletionSettings") {
+    await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:grikomsn.inception-copilot-chat completion");
+  } else if (action === "configureApiKey") await configureApiKey(provider, output);
+  else if (action === "openDashboard") await openUsageDashboard();
+  else if (action === "manage") await manage(auth, provider, output, deps);
+}
+
+function toggleSection(section: string, current: boolean): void {
+  const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
+  const raw: Record<string, unknown> = { ...configuration.get<Record<string, unknown>>(section) };
+  raw.enabled = !current;
+  void configuration.update(section, raw, vscode.ConfigurationTarget.Global);
+}
+
+async function chooseModel(deps: StatusMenuDeps, current: string): Promise<void> {
+  const models = await deps.listModels();
+  if (!models.length) return;
+  const picked = await vscode.window.showQuickPick(
+    models.map((id) => ({ label: id, description: id === current ? "current" : undefined })),
+    { title: "Completion model (applies to autocomplete and next edit)" },
+  );
+  if (!picked) return;
+  for (const section of ["autocomplete", "nextEdit"]) {
+    const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
+    const raw: Record<string, unknown> = { ...configuration.get<Record<string, unknown>>(section) };
+    raw.model = picked.label;
+    void configuration.update(section, raw, vscode.ConfigurationTarget.Global);
+  }
 }
 
 async function openUsageDashboard(): Promise<void> {
@@ -184,8 +268,4 @@ async function diagnostics(auth: InceptionAuth, output: vscode.OutputChannel): P
   output.appendLine(`[diagnostics] models=${models.length}`);
   const doc = await vscode.workspace.openTextDocument({ content: lines.join("\n"), language: "markdown" });
   await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
-}
-
-function featureState(settings: { enabled: boolean; model: string }): string {
-  return settings.enabled ? `on (${settings.model})` : "off";
 }

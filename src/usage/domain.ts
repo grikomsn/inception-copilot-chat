@@ -163,11 +163,11 @@ export function mergeUsageSnapshots(snapshots: readonly InceptionUsageSnapshot[]
   });
 }
 
-export function formatUsageStatusBar(snapshot: InceptionUsageSnapshot): string {
+export function formatUsageStatusBar(snapshot: InceptionUsageSnapshot, hasKey = true): string {
   const tracked = snapshot.tracked;
   if (tracked?.requests) return `$(graph) Inception ${compactTokens(tracked.totalTokens)}`;
   if (snapshot.error) return "$(warning) Inception usage";
-  return "$(pulse) Inception usage";
+  return hasKey ? "$(sparkle) Inception" : "$(key) Inception";
 }
 
 export function formatUsageTooltip(snapshot: InceptionUsageSnapshot): string {
@@ -181,7 +181,7 @@ export function formatUsageTooltip(snapshot: InceptionUsageSnapshot): string {
   if (snapshot.error) lines.push("Inception reported a request error; see details");
   if (snapshot.updatedAt) lines.push(`Updated ${new Date(snapshot.updatedAt).toLocaleString()}`);
   lines.push("Counts are local; the Inception dashboard is authoritative");
-  lines.push("Click for details");
+  lines.push("Click for usage and settings");
   return lines.join("\n");
 }
 

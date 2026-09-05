@@ -37,6 +37,7 @@ test("exposes usage commands and the status bar setting", () => {
   };
   assert.ok(manifest.contributes.commands.some((item) => item.command === "inceptionCopilot.showUsage"));
   assert.ok(manifest.contributes.commands.some((item) => item.command === "inceptionCopilot.openUsage"));
+  assert.ok(manifest.contributes.commands.some((item) => item.command === "inceptionCopilot.completionMenu"));
   const setting = manifest.contributes.configuration.properties["inceptionCopilot.showUsageStatusBar"];
   assert.ok(setting, "showUsageStatusBar setting must be declared");
   assert.equal(setting.default, true);
