@@ -5,6 +5,7 @@ import { resolveAutocompleteSettings } from "./config";
 import { buildPromptContext } from "./context";
 import { postprocessCompletion } from "./postprocess";
 import { CompletionDebouncer } from "./debounce";
+import { type InlineUsageListener } from "./usage";
 import {
   MIN_SELECTED_CHARS,
   hasMultipleSelections,
@@ -33,6 +34,7 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
     private readonly resolveApiKey: ApiKeyResolver,
     private readonly fim: FimClient,
     private readonly output: vscode.OutputChannel,
+    private readonly onUsage?: InlineUsageListener,
   ) {}
 
   /** Response id of the most recently returned suggestion, for feedback. */
@@ -106,6 +108,7 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
       }
       this._lastSuggestionId = completion.id ?? undefined;
       this.logUsage(settings.model, completion, Date.now() - started);
+      if (this.onUsage) this.onUsage({ feature: "autocomplete", model: settings.model, apiKey, usage: completion.usage });
 
       const text = postprocessCompletion(completion.text);
       if (!text) return undefined;

@@ -27,3 +27,17 @@ test("keeps the legacy management commands available for the Secret Storage key"
   );
   assert.ok(manifest.contributes.commands.some((item) => item.command === "inceptionCopilot.manage"));
 });
+
+test("exposes usage commands and the status bar setting", () => {
+  const manifest = JSON.parse(readFileSync("package.json", "utf8")) as {
+    contributes: {
+      commands: Array<{ command: string; title: string }>;
+      configuration: { properties: Record<string, { default?: unknown } > };
+    };
+  };
+  assert.ok(manifest.contributes.commands.some((item) => item.command === "inceptionCopilot.showUsage"));
+  assert.ok(manifest.contributes.commands.some((item) => item.command === "inceptionCopilot.openUsage"));
+  const setting = manifest.contributes.configuration.properties["inceptionCopilot.showUsageStatusBar"];
+  assert.ok(setting, "showUsageStatusBar setting must be declared");
+  assert.equal(setting.default, true);
+});

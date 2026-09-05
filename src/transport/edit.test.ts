@@ -53,6 +53,37 @@ test("posts a single user message with the tagged prompt", async () => {
   });
 });
 
+test("parses cached and reasoning usage from nested details or flat fields", async () => {
+  const nested = new EditClient(
+    "https://api.inceptionlabs.ai/v1/edit/completions",
+    "https://api.inceptionlabs.ai/v1/edit/completions/models",
+    "agent",
+    fakeFetch(() => jsonResponse({
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content: "ok" } }],
+      usage: {
+        prompt_tokens: 156,
+        completion_tokens: 18,
+        prompt_tokens_details: { cached_tokens: 40 },
+        completion_tokens_details: { reasoning_tokens: 3 },
+      },
+    })).fetcher,
+  );
+  const nestedCompletion = await nested.complete("key", request(), new AbortController().signal);
+  assert.deepEqual(nestedCompletion.usage, { promptTokens: 156, completionTokens: 18, cachedTokens: 40, reasoningTokens: 3 });
+
+  const flat = new EditClient(
+    "https://api.inceptionlabs.ai/v1/edit/completions",
+    "https://api.inceptionlabs.ai/v1/edit/completions/models",
+    "agent",
+    fakeFetch(() => jsonResponse({
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content: "ok" } }],
+      usage: { prompt_tokens: 156, completion_tokens: 18, cached_input_tokens: 40, reasoning_tokens: 3 },
+    })).fetcher,
+  );
+  const flatCompletion = await flat.complete("key", request(), new AbortController().signal);
+  assert.deepEqual(flatCompletion.usage, { promptTokens: 156, completionTokens: 18, cachedTokens: 40, reasoningTokens: 3 });
+});
+
 test("joins OpenAI-style content parts defensively", async () => {
   const { fetcher } = fakeFetch(() => jsonResponse({
     choices: [{ index: 0, message: { role: "assistant", content: [{ type: "text", text: "part one" }, { type: "text", text: "part two" }] } }],

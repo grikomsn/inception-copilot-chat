@@ -4,6 +4,7 @@ import { MercuryNextEditProvider, NEXT_EDIT_ACCEPTED_COMMAND } from "./autocompl
 import { MercuryAutocompleteProvider, AUTOCOMPLETE_ACCEPTED_COMMAND } from "./autocomplete/provider";
 import { registerCompletionStatusBar } from "./autocomplete/status";
 import { EditHistoryTracker, RecentSnippetsTracker } from "./autocomplete/tracker";
+import { type InlineUsageListener } from "./autocomplete/usage";
 import { InceptionAuth } from "./auth/auth";
 import { registerCommands } from "./commands/commands";
 import { messageOf } from "./errors";
@@ -12,9 +13,12 @@ import { EditClient } from "./transport/edit";
 import { FeedbackClient } from "./transport/feedback";
 import { FimClient } from "./transport/fim";
 import { FEEDBACK_URL, INCEPTION_ENDPOINTS, extensionUserAgent } from "./transport/protocol";
+import { mergeUsageSnapshots, type InceptionUsageSnapshot } from "./usage/domain";
+import { renderUsageStatus, updateUsageStatusVisibility } from "./usage/presentation";
 
 const RECENT_SNIPPET_COUNT = 5;
 const PROVIDER_NAME = "inception-copilot-chat";
+const USAGE_STATE_KEY = "inceptionCopilot.usageSnapshots.v1";
 
 interface SuggestionSource {
   lastSuggestionId(): string | undefined;
@@ -24,21 +28,33 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Inception");
   const auth = new InceptionAuth(context.secrets);
   const userAgent = extensionUserAgent(context.extension.packageJSON.version, vscode.version);
-  const provider = new InceptionProvider(auth, output, userAgent);
+  const storedUsage = context.globalState.get<Record<string, InceptionUsageSnapshot>>(USAGE_STATE_KEY) ?? {};
+  const provider = new InceptionProvider(auth, output, userAgent, storedUsage);
   const fim = new FimClient(INCEPTION_ENDPOINTS.fim, userAgent);
   const edit = new EditClient(INCEPTION_ENDPOINTS.edit, INCEPTION_ENDPOINTS.editModels, userAgent);
   const resolveApiKey = async (): Promise<string | undefined> =>
     (await auth.getApiKey()) ?? provider.firstConfiguredApiKey();
+  const reportInlineUsage: InlineUsageListener = (event) => {
+    provider.recordInlineUsage(event.usage ?? {}, event.model, event.apiKey);
+  };
   const nextEditConfig = resolveNextEditSettings(vscode.workspace.getConfiguration("inceptionCopilot"));
   const editHistory = new EditHistoryTracker(nextEditConfig.historyDepth);
   const recentSnippets = new RecentSnippetsTracker(nextEditConfig.snippetContextLines, RECENT_SNIPPET_COUNT);
-  const autocomplete = new MercuryAutocompleteProvider(resolveApiKey, fim, output);
-  const nextEdit = new MercuryNextEditProvider(resolveApiKey, edit, editHistory, recentSnippets, output);
+  const autocomplete = new MercuryAutocompleteProvider(resolveApiKey, fim, output, reportInlineUsage);
+  const nextEdit = new MercuryNextEditProvider(resolveApiKey, edit, editHistory, recentSnippets, output, reportInlineUsage);
   const feedback = new FeedbackClient(FEEDBACK_URL, PROVIDER_NAME, context.extension.packageJSON.version);
   const reportAcceptance = (feature: string, source: SuggestionSource): void => {
     logAcceptance(output, feature);
     void deliverFeedback(output, feedback, source);
   };
+  const usageStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
+  usageStatus.name = "Inception usage";
+  usageStatus.command = "inceptionCopilot.showUsage";
+  const renderUsage = (): void => {
+    renderUsageStatus(usageStatus, mergeUsageSnapshots(Object.values(provider.getUsageSnapshots())));
+    updateUsageStatusVisibility(usageStatus);
+  };
+  renderUsage();
 
   context.subscriptions.push(
     output,
@@ -46,11 +62,17 @@ export function activate(context: vscode.ExtensionContext): void {
     recentSnippets,
     autocomplete,
     nextEdit,
+    usageStatus,
+    provider.onDidChangeUsage(() => {
+      void context.globalState.update(USAGE_STATE_KEY, provider.getUsageSnapshots());
+      renderUsage();
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("inceptionCopilot.reasoningEffort")
         || event.affectsConfiguration("inceptionCopilot.catalogCacheMinutes")) {
         provider.fireDidChange();
       }
+      if (event.affectsConfiguration("inceptionCopilot.showUsageStatusBar")) updateUsageStatusVisibility(usageStatus);
       if (event.affectsConfiguration("inceptionCopilot.nextEdit")) {
         const settings = resolveNextEditSettings(vscode.workspace.getConfiguration("inceptionCopilot"));
         editHistory.setDepth(settings.historyDepth);

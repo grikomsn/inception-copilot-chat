@@ -6,8 +6,11 @@ import { InceptionAuth } from "../auth/auth";
 import { messageOf } from "../errors";
 import { InceptionProvider } from "../provider";
 import { API_BASE, INCEPTION_ENDPOINTS } from "../transport/protocol";
+import { formatUsageRows, mergeUsageSnapshots } from "../usage/domain";
+import { toUsageQuickPickItem, type UsageQuickPickItem } from "../usage/presentation";
 
 const API_KEYS_URL = "https://platform.inceptionlabs.ai/dashboard/api-keys";
+const USAGE_DASHBOARD_URL = "https://platform.inceptionlabs.ai/dashboard/logs";
 
 export function registerCommands(
   auth: InceptionAuth,
@@ -22,6 +25,8 @@ export function registerCommands(
     vscode.commands.registerCommand("inceptionCopilot.testConnection", () => testConnection(provider, output)),
     vscode.commands.registerCommand("inceptionCopilot.openApiKeys", () => openApiKeys()),
     vscode.commands.registerCommand("inceptionCopilot.diagnostics", () => diagnostics(auth, output)),
+    vscode.commands.registerCommand("inceptionCopilot.showUsage", () => showUsage(provider)),
+    vscode.commands.registerCommand("inceptionCopilot.openUsage", () => openUsageDashboard()),
   ];
 }
 
@@ -34,8 +39,10 @@ async function manage(
   const choices = configured
     ? [
         { label: "$(check) Test Inception inference", action: "test" },
+        { label: "$(graph) Show Inception usage", action: "usage" },
         { label: "$(refresh) Refresh hosted models", action: "refresh" },
         { label: "$(key) Replace API key", action: "configure" },
+        { label: "$(link-external) Open Inception usage dashboard", action: "usageDashboard" },
         { label: "$(link-external) Open Inception API keys", action: "open" },
         { label: "$(output) Show Inception logs", action: "logs" },
         { label: "$(info) Show diagnostics", action: "diagnostics" },
@@ -43,6 +50,7 @@ async function manage(
       ]
     : [
         { label: "$(key) Configure Inception API key", action: "configure" },
+        { label: "$(link-external) Open Inception usage dashboard", action: "usageDashboard" },
         { label: "$(link-external) Open Inception API keys", action: "open" },
         { label: "$(output) Show Inception logs", action: "logs" },
       ];
@@ -53,10 +61,32 @@ async function manage(
   if (picked.action === "configure") await configureApiKey(provider, output);
   else if (picked.action === "refresh") await refreshModels(provider);
   else if (picked.action === "test") await testConnection(provider, output);
+  else if (picked.action === "usage") await showUsage(provider);
+  else if (picked.action === "usageDashboard") await openUsageDashboard();
   else if (picked.action === "open") await openApiKeys();
   else if (picked.action === "logs") output.show(true);
   else if (picked.action === "diagnostics") await diagnostics(auth, output);
   else if (picked.action === "remove") await removeApiKey(provider);
+}
+
+/** QuickPick of locally tracked usage plus a deep link to the authoritative dashboard. */
+async function showUsage(provider: InceptionProvider): Promise<void> {
+  const snapshot = mergeUsageSnapshots(Object.values(provider.getUsageSnapshots()));
+  const items: UsageQuickPickItem[] = [
+    ...formatUsageRows(snapshot).map(toUsageQuickPickItem),
+    { label: "", kind: vscode.QuickPickItemKind.Separator },
+    { label: "$(link-external) Open Inception usage dashboard", action: "openDashboard" },
+  ];
+  const picked = await vscode.window.showQuickPick(items, {
+    title: "Inception usage (tracked locally by this extension)",
+    placeHolder: "Counts cover Copilot Chat and inline completions on this device",
+  });
+  if (picked?.action === "openDashboard") await openUsageDashboard();
+}
+
+async function openUsageDashboard(): Promise<void> {
+  const opened = await vscode.env.openExternal(vscode.Uri.parse(USAGE_DASHBOARD_URL));
+  if (!opened) vscode.window.showWarningMessage("VS Code could not open Inception Platform.");
 }
 
 async function configureApiKey(

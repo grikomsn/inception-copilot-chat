@@ -1,3 +1,5 @@
+import { MERCURY_MODEL_COST, modelCostFromApi, type ModelCost } from "./pricing";
+
 export const FALLBACK_MODELS = ["mercury-2"] as const;
 export const DEFAULT_MAX_INPUT_TOKENS = 128_000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 50_000;
@@ -7,15 +9,17 @@ export interface InceptionModelMetadata {
   readonly version: string;
   readonly contextLength: number;
   readonly maxOutputTokens: number;
+  readonly cost?: ModelCost;
 }
 export interface InceptionApiModel {
   readonly id?: unknown;
   readonly context_length?: unknown;
   readonly max_output_length?: unknown;
+  readonly pricing?: unknown;
 }
 export const FALLBACK_MODEL_METADATA: readonly InceptionModelMetadata[] = [{
   id: "mercury-2", version: "2", contextLength: DEFAULT_MAX_INPUT_TOKENS,
-  maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+  maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS, cost: MERCURY_MODEL_COST,
 }];
 export function isInceptionChatModel(id: string): boolean {
   return id.startsWith("mercury") && !/(edit|fim|embedding)/i.test(id);
@@ -34,10 +38,12 @@ export function orderModelMetadata(models: readonly InceptionApiModel[]): Incept
   for (const model of models) {
     if (!model || typeof model.id !== "string" || !isInceptionChatModel(model.id)) continue;
     const baseline = getModelMetadata(model.id);
+    const cost = modelCostFromApi(model.pricing) ?? baseline.cost;
     found.set(model.id, {
       ...baseline,
       contextLength: positiveInteger(model.context_length) ?? baseline.contextLength,
       maxOutputTokens: positiveInteger(model.max_output_length) ?? baseline.maxOutputTokens,
+      ...(cost === undefined ? {} : { cost }),
     });
   }
   return orderModels([...found.keys()]).map(id => found.get(id)!);

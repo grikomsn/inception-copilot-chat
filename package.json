@@ -67,6 +67,14 @@
         "title": "Inception: Show Diagnostics"
       },
       {
+        "command": "inceptionCopilot.showUsage",
+        "title": "Inception: Show Usage"
+      },
+      {
+        "command": "inceptionCopilot.openUsage",
+        "title": "Inception: Open Usage Dashboard"
+      },
+      {
         "command": "inceptionCopilot.completionMenu",
         "title": "Inception: Completion Settings"
       },
@@ -139,6 +147,11 @@
           "type": "boolean",
           "default": false,
           "description": "Log request, stream, usage, and model-discovery metadata to the Inception output channel. Prompts and API keys are never logged."
+        },
+        "inceptionCopilot.showUsageStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a status bar item with locally tracked Inception token usage and estimated spend. Counts are device-local; the Inception dashboard is authoritative."
         },
         "inceptionCopilot.sendFeedback": {
           "type": "boolean",
