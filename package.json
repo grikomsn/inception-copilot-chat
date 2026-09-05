@@ -1,0 +1,161 @@
+{
+  "name": "inception-copilot-chat",
+  "displayName": "Inception for GitHub Copilot Chat",
+  "description": "Use Inception Mercury models in GitHub Copilot Chat with your Inception API key.",
+  "version": "0.1.0",
+  "publisher": "grikomsn",
+  "icon": "assets/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grikomsn/inception-copilot-chat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/grikomsn/inception-copilot-chat/issues"
+  },
+  "homepage": "https://github.com/grikomsn/inception-copilot-chat#readme",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "inception",
+    "mercury",
+    "copilot",
+    "copilot-chat",
+    "api-key",
+    "language-model"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onLanguageModelChatProvider:inception"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "inceptionCopilot.manage",
+        "title": "Inception: Manage Connection"
+      },
+      {
+        "command": "inceptionCopilot.configureApiKey",
+        "title": "Inception: Configure API Key"
+      },
+      {
+        "command": "inceptionCopilot.removeApiKey",
+        "title": "Inception: Remove API Key"
+      },
+      {
+        "command": "inceptionCopilot.refreshModels",
+        "title": "Inception: Refresh Models"
+      },
+      {
+        "command": "inceptionCopilot.testConnection",
+        "title": "Inception: Test Inference"
+      },
+      {
+        "command": "inceptionCopilot.openApiKeys",
+        "title": "Inception: Open API Keys"
+      },
+      {
+        "command": "inceptionCopilot.diagnostics",
+        "title": "Inception: Show Diagnostics"
+      }
+    ],
+    "configuration": {
+      "title": "Inception for Copilot Chat",
+      "properties": {
+        "inceptionCopilot.reasoningEffort": {
+          "type": "string",
+          "enum": [
+            "instant",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "medium",
+          "enumDescriptions": [
+            "Lowest latency.",
+            "Light reasoning.",
+            "Balanced reasoning (default).",
+            "Deeper reasoning."
+          ],
+          "description": "Default Mercury reasoning effort. A model-picker selection overrides this value."
+        },
+        "inceptionCopilot.maxOutputTokens": {
+          "type": "number",
+          "default": 16384,
+          "minimum": 0,
+          "description": "Maximum output tokens requested from Inception hosted models. Use 0 to use the selected model's advertised maximum."
+        },
+        "inceptionCopilot.requestTimeoutSeconds": {
+          "type": "number",
+          "default": 600,
+          "minimum": 10,
+          "description": "Maximum duration of a Inception inference request in seconds."
+        },
+        "inceptionCopilot.streamIdleTimeoutSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 10,
+          "description": "Maximum time without receiving streamed Inception response data before aborting a request."
+        },
+        "inceptionCopilot.catalogCacheMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "How long the Inception hosted-model catalog is reused before refreshing."
+        },
+        "inceptionCopilot.debugLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log request, stream, usage, and model-discovery metadata to the Inception output channel. Prompts and API keys are never logged."
+        }
+      }
+    },
+    "languageModelChatProviders": [
+      {
+        "vendor": "inception",
+        "displayName": "Inception",
+        "configuration": {
+          "type": "object",
+          "required": [
+            "apiKey"
+          ],
+          "properties": {
+            "apiKey": {
+              "type": "string",
+              "title": "Inception API Key",
+              "description": "API key for this Inception provider entry. VS Code stores configured secrets securely.",
+              "secret": true
+            }
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('out',{recursive:true,force:true})\"",
+    "compile": "npm run clean && tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test \"out/**/*.test.js\"",
+    "check": "npm test",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "npm run check && vsce publish --skip-duplicate",
+    "prepackage": "npm run check",
+    "package": "vsce package",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.125.0",
+    "@vscode/vsce": "^3.9.2",
+    "typescript": "^6.0.3"
+  }
+}

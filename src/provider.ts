@@ -1,0 +1,451 @@
+import * as vscode from "vscode";
+import { InceptionAuth } from "./auth/auth";
+import { messageOf } from "./errors";
+import {
+  FALLBACK_MODEL_METADATA,
+  FALLBACK_MODELS,
+  formatTokenLimit,
+  formatModelName,
+  orderModelMetadata,
+  resolveMaxOutputTokens,
+  type InceptionApiModel,
+  type InceptionModelMetadata,
+} from "./models/catalog";
+import {
+  DEFAULT_REASONING_EFFORT,
+  applyReasoningEffort,
+  buildModelConfigurationSchema,
+  resolveReasoningEffort,
+  type ReasoningEffort,
+} from "./models/options";
+import { ChatCompletionStreamParser, type ChatStreamEvent, validateStreamCompletion } from "./transport/sse";
+import { INCEPTION_ENDPOINTS, inceptionHeaders } from "./transport/protocol";
+import { toProviderUsagePayload } from "./usage/domain";
+import { apiKeyFromConfiguration, credentialRefForApiKey, qualifiedModelId } from "./provider-profile";
+
+export { API_BASE } from "./transport/protocol";
+
+export interface InceptionModel extends vscode.LanguageModelChatInformation {
+  rawModelId: string;
+  credentialRef: string;
+}
+
+interface ApiMessage {
+  role: "user" | "assistant" | "tool";
+  content: string | null;
+  tool_calls?: ApiToolCall[];
+  tool_call_id?: string;
+}
+
+interface ApiToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+export class InceptionProvider implements vscode.LanguageModelChatProvider<InceptionModel> {
+  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeLanguageModelChatInformation = this.changeEmitter.event;
+  private readonly catalogs = new Map<string, InceptionModelMetadata[]>();
+  private readonly refreshedAt = new Map<string, number>();
+  private readonly apiKeys = new Map<string, string>();
+
+  private get configuration(): vscode.WorkspaceConfiguration {
+    return vscode.workspace.getConfiguration("inceptionCopilot");
+  }
+
+  private get debugLogging(): boolean {
+    return this.configuration.get("debugLogging", false);
+  }
+
+  constructor(
+    private readonly auth: InceptionAuth,
+    private readonly output: vscode.OutputChannel,
+    private readonly userAgent: string,
+    private readonly fetcher: typeof fetch = fetch,
+  ) {}
+
+  fireDidChange(): void {
+    this.changeEmitter.fire();
+  }
+
+  async configureApiKey(apiKey: string): Promise<string[]> {
+    const models = await this.fetchModels(apiKey.trim());
+    await this.auth.storeApiKey(apiKey);
+    this.setCatalog("legacy", models);
+    this.changeEmitter.fire();
+    return models.map(({ id }) => id);
+  }
+
+  async clearApiKey(): Promise<void> {
+    await this.auth.clearApiKey();
+    this.apiKeys.delete("legacy");
+    this.setCatalog("legacy", [...FALLBACK_MODEL_METADATA]);
+    this.refreshedAt.delete("legacy");
+    this.changeEmitter.fire();
+  }
+
+  async refreshModels(): Promise<string[]> {
+    const apiKey = await this.requireApiKey(false, "legacy");
+    const models = await this.refreshCatalog("legacy", apiKey);
+    this.changeEmitter.fire();
+    return models.map(({ id }) => id);
+  }
+
+  async provideLanguageModelChatInformation(
+    options: vscode.PrepareLanguageModelChatModelOptions,
+    token: vscode.CancellationToken,
+  ): Promise<InceptionModel[]> {
+    const legacyApiKey = await this.auth.getApiKey();
+    const configuredApiKey = options.configuration
+      ? apiKeyFromConfiguration(options.configuration)
+      : undefined;
+    if (token.isCancellationRequested || (options.configuration && !configuredApiKey)) return [];
+    const apiKey = configuredApiKey ?? legacyApiKey;
+    const credentialRef = configuredApiKey
+      ? credentialRefForApiKey(configuredApiKey, legacyApiKey)
+      : "legacy";
+    if (apiKey) this.apiKeys.set(credentialRef, apiKey);
+    const maxAge = Math.max(1, this.configuration.get("catalogCacheMinutes", 5)) * 60_000;
+    if (apiKey && Date.now() - (this.refreshedAt.get(credentialRef) ?? 0) > maxAge) {
+      try {
+        await this.refreshCatalog(credentialRef, apiKey, token);
+      } catch (error) {
+        if (!token.isCancellationRequested) {
+          this.output.appendLine(`[models] discovery failed; using cached/fallback list: ${messageOf(error)}`);
+        }
+      }
+    }
+
+    const defaultEffort = resolveReasoningEffort(
+      undefined,
+      this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
+    );
+    return this.catalogFor(credentialRef).map((metadata) => ({
+      id: qualifiedModelId(credentialRef, metadata.id),
+      rawModelId: metadata.id,
+      credentialRef,
+      name: formatModelName(metadata.id),
+      family: "inception-mercury",
+      version: metadata.version,
+      detail: credentialRef === "legacy"
+        ? (apiKey ? "Inception Platform" : "Inception API key required")
+        : `Inception Platform · ${credentialRef.slice(0, 8)}`,
+      tooltip: `${metadata.id} via the hosted Inception API · ${formatTokenLimit(metadata.contextLength)} context · ${formatTokenLimit(metadata.maxOutputTokens)} max output · text only`,
+      maxInputTokens: metadata.contextLength,
+      maxOutputTokens: metadata.maxOutputTokens,
+      isUserSelectable: true,
+      ...(credentialRef !== "legacy" ? { isBYOK: true } : {}),
+      ...(credentialRef === "legacy" && !apiKey
+        ? { requiresAuthorization: { label: "Configure Inception API key" } }
+        : {}),
+      configurationSchema: buildModelConfigurationSchema(defaultEffort),
+      capabilities: {
+        imageInput: false,
+        toolCalling: true,
+      },
+    }));
+  }
+
+  async provideLanguageModelChatResponse(
+    model: InceptionModel,
+    messages: readonly vscode.LanguageModelChatRequestMessage[],
+    options: vscode.ProvideLanguageModelChatResponseOptions,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart2>,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
+    if (token.isCancellationRequested) return;
+    const apiKey = await this.requireApiKey(false, model.credentialRef);
+    const reasoningEffort = resolveReasoningEffort(
+      options.modelConfiguration,
+      this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
+    );
+    const requestBody = buildRequest(model.rawModelId, messages, options, reasoningEffort, model.maxOutputTokens);
+    const controller = new AbortController();
+    const cancellation = token.onCancellationRequested(() => controller.abort());
+    const timeoutSeconds = Math.max(10, this.configuration.get("requestTimeoutSeconds", 600));
+    const idleTimeoutSeconds = Math.max(10, this.configuration.get("streamIdleTimeoutSeconds", 120));
+    let timedOut: "total" | "idle" | undefined;
+    const totalTimeout = setTimeout(() => {
+      timedOut = "total";
+      controller.abort();
+    }, timeoutSeconds * 1000);
+    let idleTimeout: ReturnType<typeof setTimeout> | undefined;
+    const resetIdleTimeout = (): void => {
+      if (idleTimeout) clearTimeout(idleTimeout);
+      idleTimeout = setTimeout(() => {
+        timedOut = "idle";
+        controller.abort();
+      }, idleTimeoutSeconds * 1000);
+    };
+    resetIdleTimeout();
+    try {
+      if (this.debugLogging) {
+        this.output.appendLine(`[request] model=${model.rawModelId} effort=${reasoningEffort} initiator=${options.requestInitiator ?? "unknown"}`);
+      }
+      const response = await this.fetcher(INCEPTION_ENDPOINTS.chat, {
+        method: "POST",
+        headers: this.requestHeaders(apiKey, "text/event-stream"),
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw await apiError(`Inception request failed for ${model.rawModelId}`, response);
+      if (!response.body) throw new Error("Inception returned an empty response stream");
+
+      const parser = new ChatCompletionStreamParser();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        if (token.isCancellationRequested) {
+          await reader.cancel();
+          return;
+        }
+        const result = await reader.read();
+        if (result.done) break;
+        resetIdleTimeout();
+        for (const event of parser.push(decoder.decode(result.value, { stream: true }))) {
+          this.reportEvent(event, progress);
+        }
+      }
+      for (const event of parser.finish()) this.reportEvent(event, progress);
+      validateStreamCompletion(parser.finishReason);
+    } catch (error) {
+      if (token.isCancellationRequested) return;
+      if (timedOut === "idle") throw new Error(`Inception request for ${model.rawModelId} received no data for ${idleTimeoutSeconds} seconds`);
+      if (timedOut === "total") throw new Error(`Inception request for ${model.rawModelId} exceeded ${timeoutSeconds} seconds`);
+      throw error;
+    } finally {
+      clearTimeout(totalTimeout);
+      if (idleTimeout) clearTimeout(idleTimeout);
+      cancellation.dispose();
+    }
+  }
+
+  async provideTokenCount(
+    _model: InceptionModel,
+    value: string | vscode.LanguageModelChatRequestMessage,
+    _token: vscode.CancellationToken,
+  ): Promise<number> {
+    const text = typeof value === "string" ? value : messageToText(value);
+    return Math.max(1, Math.ceil(text.length / 4));
+  }
+
+  async testConnection(): Promise<{ model: string; reasoningEffort: ReasoningEffort; text: string }> {
+    const credentialRef = "legacy";
+    const apiKey = await this.requireApiKey(false, credentialRef);
+    const models = this.catalogFor(credentialRef);
+    const model = models.some(({ id }) => id === "mercury-2")
+      ? "mercury-2"
+      : models[0]?.id ?? FALLBACK_MODELS[0];
+    const reasoningEffort = resolveReasoningEffort(
+      undefined,
+      this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
+    );
+    const response = await this.fetcher(INCEPTION_ENDPOINTS.chat, {
+      method: "POST",
+      headers: this.requestHeaders(apiKey, "application/json"),
+      signal: AbortSignal.timeout(60_000),
+      body: JSON.stringify(applyReasoningEffort({
+        model,
+        messages: [{ role: "user", content: "Reply with exactly: Inception connection verified" }],
+        max_completion_tokens: 4096,
+        stream: false,
+      }, reasoningEffort)),
+    });
+    if (!response.ok) throw await apiError("Inception connection test failed", response);
+    const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    return { model, reasoningEffort, text: body.choices?.[0]?.message?.content?.trim() ?? "(empty response)" };
+  }
+
+  private async fetchModels(apiKey: string): Promise<InceptionModelMetadata[]> {
+    if (!apiKey) throw new Error("Inception API key is not configured");
+    const response = await this.fetcher(INCEPTION_ENDPOINTS.models, {
+      headers: this.requestHeaders(apiKey, "application/json, application/problem+json"),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw await apiError("Unable to list Inception models", response);
+    const body = (await response.json()) as { data?: InceptionApiModel[] } | null;
+    if (!body || !Array.isArray(body.data)) throw new Error("Inception returned an invalid model catalog");
+    const models = orderModelMetadata(body.data);
+    if (!models.length) throw new Error("Inception returned no chat-capable models");
+    if (this.debugLogging) this.output.appendLine(`[models] ${models.map(({ id }) => id).join(", ")}`);
+    return models;
+  }
+
+  private async requireApiKey(prompt: boolean, credentialRef: string): Promise<string> {
+    let apiKey = credentialRef === "legacy" ? await this.auth.getApiKey() : this.apiKeys.get(credentialRef);
+    if (!apiKey && prompt && credentialRef === "legacy") {
+      await vscode.commands.executeCommand("inceptionCopilot.configureApiKey");
+      apiKey = await this.auth.getApiKey();
+    }
+    if (!apiKey) {
+      throw new Error(credentialRef === "legacy"
+        ? "Inception API key is not configured. Run ‘Inception: Configure API Key’."
+        : "The API key for this Inception provider entry is unavailable. Update the entry in Manage Language Models.");
+    }
+    return apiKey;
+  }
+
+  private catalogFor(credentialRef: string): InceptionModelMetadata[] {
+    let catalog = this.catalogs.get(credentialRef);
+    if (!catalog) {
+      catalog = [...FALLBACK_MODEL_METADATA];
+      this.catalogs.set(credentialRef, catalog);
+    }
+    return catalog;
+  }
+
+  private setCatalog(credentialRef: string, models: readonly InceptionModelMetadata[]): void {
+    this.catalogs.set(credentialRef, [...models]);
+    this.refreshedAt.set(credentialRef, Date.now());
+  }
+
+  private async refreshCatalog(
+    credentialRef: string,
+    apiKey: string,
+    token?: vscode.CancellationToken,
+  ): Promise<InceptionModelMetadata[]> {
+    if (token?.isCancellationRequested) return this.catalogFor(credentialRef);
+    const models = await this.fetchModels(apiKey);
+    this.setCatalog(credentialRef, models);
+    return models;
+  }
+
+  private requestHeaders(apiKey: string, accept: string): Record<string, string> {
+    return inceptionHeaders(apiKey, accept, this.userAgent);
+  }
+
+  private reportEvent(
+    event: ChatStreamEvent,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart2>,
+  ): void {
+    if (event.text) progress.report(new vscode.LanguageModelTextPart(event.text));
+    if (event.reasoning) {
+      const ThinkingPart = (vscode as unknown as { LanguageModelThinkingPart?: typeof vscode.LanguageModelThinkingPart })
+        .LanguageModelThinkingPart;
+      if (ThinkingPart) progress.report(new ThinkingPart(event.reasoning));
+    }
+    for (const tool of event.toolCalls ?? []) {
+      progress.report(new vscode.LanguageModelToolCallPart(
+        tool.id || `inception-tool-${Date.now()}`,
+        tool.name,
+        parseArguments(tool.arguments),
+      ));
+    }
+    if (event.usage) {
+      const payload = toProviderUsagePayload(event.usage);
+      if (this.debugLogging) this.output.appendLine(`[usage] ${JSON.stringify(payload)}`);
+      progress.report(new vscode.LanguageModelDataPart(
+        new TextEncoder().encode(JSON.stringify(payload)),
+        "usage",
+      ));
+    }
+  }
+}
+
+function buildRequest(
+  model: string,
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
+  options: vscode.ProvideLanguageModelChatResponseOptions,
+  reasoningEffort: ReasoningEffort,
+  advertisedMaxTokens: number,
+): Record<string, unknown> {
+  const configuredMaxTokens = vscode.workspace
+    .getConfiguration("inceptionCopilot")
+    .get("maxOutputTokens", 16384);
+  const maxTokens = resolveMaxOutputTokens(configuredMaxTokens, advertisedMaxTokens);
+  const tools = (options.tools ?? []).map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: sanitizeSchema(tool.inputSchema),
+    },
+  }));
+  return applyReasoningEffort({
+    model,
+    messages: normalizeMessages(messages.flatMap(convertMessage)),
+    stream: true,
+    stream_options: { include_usage: true },
+    max_completion_tokens: maxTokens,
+    ...(tools.length ? { tools, tool_choice: toolMode(options.toolMode) } : {}),
+  }, reasoningEffort);
+}
+
+function convertMessage(message: vscode.LanguageModelChatRequestMessage): ApiMessage[] {
+  const role = message.role === vscode.LanguageModelChatMessageRole.Assistant ? "assistant" : "user";
+  const text: string[] = [];
+  const toolCalls: ApiToolCall[] = [];
+  const results: ApiMessage[] = [];
+
+  for (const part of message.content) {
+    if (part instanceof vscode.LanguageModelTextPart) text.push(part.value);
+    else if (part instanceof vscode.LanguageModelToolCallPart) {
+      toolCalls.push({
+        id: part.callId,
+        type: "function",
+        function: { name: part.name, arguments: JSON.stringify(part.input ?? {}) },
+      });
+    } else if (part instanceof vscode.LanguageModelToolResultPart) {
+      results.push({ role: "tool", tool_call_id: part.callId, content: part.content.map(inputPartText).join("\n") });
+    } else if (part instanceof vscode.LanguageModelDataPart && part.mimeType.startsWith("image/")) {
+      throw new Error("Inception hosted models are text-only. Remove image attachments and try again.");
+    }
+  }
+
+  const content = text.join("\n");
+  if (role === "assistant" && toolCalls.length) {
+    return [{ role, content: content || null, tool_calls: toolCalls }];
+  }
+  if (results.length) return content ? [{ role, content }, ...results] : results;
+  return [{ role, content }];
+}
+
+function normalizeMessages(messages: ApiMessage[]): ApiMessage[] {
+  const filtered = messages.filter((message) =>
+    Boolean(message.tool_calls?.length || message.tool_call_id || message.content),
+  );
+  if (filtered[0]?.role === "assistant") {
+    filtered.unshift({ role: "user", content: "Continue from the previous assistant response." });
+  }
+  return filtered.length ? filtered : [{ role: "user", content: "" }];
+}
+
+function inputPartText(part: vscode.LanguageModelInputPart | unknown): string {
+  if (part instanceof vscode.LanguageModelTextPart) return part.value;
+  if (part instanceof vscode.LanguageModelToolCallPart) return JSON.stringify(part.input ?? {});
+  if (part instanceof vscode.LanguageModelToolResultPart) return part.content.map(inputPartText).join("\n");
+  if (part instanceof vscode.LanguageModelDataPart) return `[${part.mimeType} data omitted]`;
+  if (typeof part === "string") return part;
+  return "";
+}
+
+function messageToText(message: vscode.LanguageModelChatRequestMessage): string {
+  return message.content.map(inputPartText).join("\n");
+}
+
+function sanitizeSchema(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return { type: "object", properties: {} };
+  }
+  return schema as Record<string, unknown>;
+}
+
+function toolMode(mode: vscode.LanguageModelChatToolMode | undefined): "auto" | "required" {
+  return mode === vscode.LanguageModelChatToolMode.Required ? "required" : "auto";
+}
+
+function parseArguments(value: string): object {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return typeof parsed === "object" && parsed !== null ? parsed : { value: parsed };
+  } catch {
+    return { value };
+  }
+}
+
+async function apiError(prefix: string, response: Response): Promise<Error> {
+  // Upstream error bodies can echo prompts or credentials. Keep diagnostics safe.
+  await response.body?.cancel();
+  return new Error(`${prefix} (HTTP ${response.status})`);
+}
