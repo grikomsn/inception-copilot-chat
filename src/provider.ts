@@ -17,11 +17,19 @@ import {
   resolveReasoningEffort,
   type ReasoningEffort,
 } from "./models/options";
-import { ChatCompletionStreamParser, validateStreamCompletion } from "./transport/sse";
+import { ChatCompletionStreamParser, validateStreamCompletion, type ChatStreamEvent } from "./transport/sse";
 import { INCEPTION_ENDPOINTS, inceptionHeaders } from "./transport/protocol";
 import { reportEvent } from "./provider/response";
 import { buildRequest } from "./provider/request";
 import { messageToText } from "./provider/messages";
+import { modelPricingFields } from "./models/pricing";
+import {
+  mergeUsageError,
+  recordRequestUsage,
+  toProviderUsagePayload,
+  type InceptionUsageSnapshot,
+  type ProviderUsagePayload,
+} from "./usage/domain";
 import { apiKeyFromConfiguration, credentialRefForApiKey, qualifiedModelId } from "./provider-profile";
 
 export { API_BASE } from "./transport/protocol";
@@ -34,9 +42,13 @@ export interface InceptionModel extends vscode.LanguageModelChatInformation {
 export class InceptionProvider implements vscode.LanguageModelChatProvider<InceptionModel> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeLanguageModelChatInformation = this.changeEmitter.event;
+  private readonly usageEmitter = new vscode.EventEmitter<string>();
+  /** Fires with the credential ref whose locally tracked usage changed. */
+  readonly onDidChangeUsage = this.usageEmitter.event;
   private readonly catalogs = new Map<string, InceptionModelMetadata[]>();
   private readonly refreshedAt = new Map<string, number>();
   private readonly apiKeys = new Map<string, string>();
+  private readonly usage = new Map<string, InceptionUsageSnapshot>();
 
   private get configuration(): vscode.WorkspaceConfiguration {
     return vscode.workspace.getConfiguration("inceptionCopilot");
@@ -50,8 +62,13 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     private readonly auth: InceptionAuth,
     private readonly output: vscode.OutputChannel,
     private readonly userAgent: string,
+    initialUsage: Record<string, InceptionUsageSnapshot> = {},
     private readonly fetcher: typeof fetch = fetch,
-  ) {}
+  ) {
+    for (const [credentialRef, snapshot] of Object.entries(initialUsage)) {
+      if (snapshot && typeof snapshot === "object") this.usage.set(credentialRef, snapshot);
+    }
+  }
 
   fireDidChange(): void {
     this.changeEmitter.fire();
@@ -70,7 +87,77 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     this.apiKeys.delete("legacy");
     this.setCatalog("legacy", [...FALLBACK_MODEL_METADATA]);
     this.refreshedAt.delete("legacy");
+    this.clearUsage("legacy");
     this.changeEmitter.fire();
+  }
+
+  getUsageSnapshot(credentialRef: string): InceptionUsageSnapshot | undefined {
+    return this.usage.get(credentialRef);
+  }
+
+  getUsageSnapshots(): Record<string, InceptionUsageSnapshot> {
+    return Object.fromEntries(this.usage);
+  }
+
+  clearUsage(credentialRef: string): void {
+    if (!this.usage.delete(credentialRef)) return;
+    this.usageEmitter.fire(credentialRef);
+  }
+
+  /**
+   * Records usage from the inline-completion providers (FIM/next edit). The
+   * resolved API key identifies the credential so inline usage joins the same
+   * snapshot as chat usage; unmatched keys fall back to the legacy scope.
+   */
+  recordInlineUsage(
+    usage: { promptTokens?: number; completionTokens?: number; cachedTokens?: number; reasoningTokens?: number },
+    modelId: string,
+    apiKey: string | undefined,
+  ): void {
+    const payload = toProviderUsagePayload({
+      prompt_tokens: usage.promptTokens,
+      completion_tokens: usage.completionTokens,
+      prompt_tokens_details: usage.cachedTokens === undefined ? undefined : { cached_tokens: usage.cachedTokens },
+      completion_tokens_details: usage.reasoningTokens === undefined ? undefined : { reasoning_tokens: usage.reasoningTokens },
+    });
+    this.setUsage(this.credentialRefForApiKey(apiKey), payload, modelId);
+  }
+
+  private credentialRefForApiKey(apiKey: string | undefined): string {
+    if (apiKey !== undefined) {
+      for (const [credentialRef, stored] of this.apiKeys) {
+        if (stored === apiKey) return credentialRef;
+      }
+    }
+    return "legacy";
+  }
+
+  private setUsage(credentialRef: string, usage: ProviderUsagePayload, modelId: string): void {
+    const next = recordRequestUsage(this.usage.get(credentialRef), usage, modelId);
+    this.usage.set(credentialRef, next);
+    this.usageEmitter.fire(credentialRef);
+  }
+
+  /** Surfaces quota (402) and rate-limit (429) failures in the usage snapshot. */
+  private recordRequestFailure(status: number, credentialRef: string): void {
+    if (status !== 402 && status !== 429) return;
+    this.setUsageError(credentialRef, status === 402
+      ? "Inception rejected the request (HTTP 402): billing inactive or free tokens exhausted"
+      : "Inception rate limit reached (HTTP 429)");
+  }
+
+  private setUsageError(credentialRef: string, error: string): void {
+    this.usage.set(credentialRef, mergeUsageError(this.usage.get(credentialRef), error));
+    this.usageEmitter.fire(credentialRef);
+  }
+
+  private reportStreamEvent(
+    event: ChatStreamEvent,
+    model: InceptionModel,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart2>,
+  ): void {
+    if (event.usage) this.setUsage(model.credentialRef, toProviderUsagePayload(event.usage), model.rawModelId);
+    reportEvent(event, progress, this.output, this.debugLogging);
   }
 
   async refreshModels(): Promise<string[]> {
@@ -117,30 +204,41 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       undefined,
       this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
     );
-    return this.catalogFor(credentialRef).map((metadata) => ({
-      id: qualifiedModelId(credentialRef, metadata.id),
-      rawModelId: metadata.id,
-      credentialRef,
-      name: formatModelName(metadata.id),
-      family: "inception-mercury",
-      version: metadata.version,
-      detail: credentialRef === "legacy"
-        ? (apiKey ? "Inception Platform" : "Inception API key required")
-        : `Inception Platform · ${credentialRef.slice(0, 8)}`,
-      tooltip: `${metadata.id} via the hosted Inception API · ${formatTokenLimit(metadata.contextLength)} context · ${formatTokenLimit(metadata.maxOutputTokens)} max output · text only`,
-      maxInputTokens: metadata.contextLength,
-      maxOutputTokens: metadata.maxOutputTokens,
-      isUserSelectable: true,
-      ...(credentialRef !== "legacy" ? { isBYOK: true } : {}),
-      ...(credentialRef === "legacy" && !apiKey
-        ? { requiresAuthorization: { label: "Configure Inception API key" } }
-        : {}),
-      configurationSchema: buildModelConfigurationSchema(defaultEffort),
-      capabilities: {
-        imageInput: false,
-        toolCalling: true,
-      },
-    }));
+    return this.catalogFor(credentialRef).map((metadata) => {
+      const pricing = modelPricingFields(metadata.cost);
+      const tooltipParts = [
+        `${metadata.id} via the hosted Inception API`,
+        `${formatTokenLimit(metadata.contextLength)} context`,
+        `${formatTokenLimit(metadata.maxOutputTokens)} max output`,
+        "text only",
+      ];
+      if (pricing) tooltipParts.push(pricing.pricing);
+      return {
+        id: qualifiedModelId(credentialRef, metadata.id),
+        rawModelId: metadata.id,
+        credentialRef,
+        name: formatModelName(metadata.id),
+        family: "inception-mercury",
+        version: metadata.version,
+        detail: credentialRef === "legacy"
+          ? (apiKey ? "Inception Platform" : "Inception API key required")
+          : `Inception Platform · ${credentialRef.slice(0, 8)}`,
+        tooltip: tooltipParts.join(" · "),
+        maxInputTokens: metadata.contextLength,
+        maxOutputTokens: metadata.maxOutputTokens,
+        isUserSelectable: true,
+        ...(pricing === undefined ? {} : pricing),
+        ...(credentialRef !== "legacy" ? { isBYOK: true } : {}),
+        ...(credentialRef === "legacy" && !apiKey
+          ? { requiresAuthorization: { label: "Configure Inception API key" } }
+          : {}),
+        configurationSchema: buildModelConfigurationSchema(defaultEffort),
+        capabilities: {
+          imageInput: false,
+          toolCalling: true,
+        },
+      };
+    });
   }
 
   async provideLanguageModelChatResponse(
@@ -185,7 +283,10 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
         body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
-      if (!response.ok) throw await apiError(`Inception request failed for ${model.rawModelId}`, response);
+      if (!response.ok) {
+        this.recordRequestFailure(response.status, model.credentialRef);
+        throw await apiError(`Inception request failed for ${model.rawModelId}`, response);
+      }
       if (!response.body) throw new Error("Inception returned an empty response stream");
 
       const parser = new ChatCompletionStreamParser();
@@ -200,10 +301,10 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
         if (result.done) break;
         resetIdleTimeout();
         for (const event of parser.push(decoder.decode(result.value, { stream: true }))) {
-          reportEvent(event, progress, this.output, this.debugLogging);
+          this.reportStreamEvent(event, model, progress);
         }
       }
-      for (const event of parser.finish()) reportEvent(event, progress, this.output, this.debugLogging);
+      for (const event of parser.finish()) this.reportStreamEvent(event, model, progress);
       validateStreamCompletion(parser.finishReason);
     } catch (error) {
       if (token.isCancellationRequested) return;
@@ -248,8 +349,15 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
         stream: false,
       }, reasoningEffort)),
     });
-    if (!response.ok) throw await apiError("Inception connection test failed", response);
-    const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    if (!response.ok) {
+      this.recordRequestFailure(response.status, credentialRef);
+      throw await apiError("Inception connection test failed", response);
+    }
+    const body = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: Record<string, unknown>;
+    };
+    if (body.usage) this.setUsage(credentialRef, toProviderUsagePayload(body.usage), model);
     return { model, reasoningEffort, text: body.choices?.[0]?.message?.content?.trim() ?? "(empty response)" };
   }
 

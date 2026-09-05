@@ -2,6 +2,11 @@ export interface ConfigurationReader {
   get<T>(section: string): T | undefined;
 }
 
+/** Human-readable on/off state for a completion feature, e.g. `on (mercury-edit-2)`. */
+export function featureState(settings: { enabled: boolean; model: string }): string {
+  return settings.enabled ? `on (${settings.model})` : "off";
+}
+
 export const AUTOCOMPLETE_SECTION = "autocomplete";
 export const NEXT_EDIT_SECTION = "nextEdit";
 

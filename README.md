@@ -26,9 +26,12 @@ Alternatively, run **Inception: Configure API Key** to keep a command-managed ke
 - Live chat-only model discovery, with a Mercury 2 fallback when discovery is unavailable.
 - Streaming text, sequential tool calling, usage reporting, cancellation, and total/idle request timeouts.
 - Mercury 2 reasoning choices: **Instant**, **Low**, **Medium** (default), and **High**.
+- Model picker pricing from live discovery (per-million input/output/cached rates) shown in the picker tooltip and fields.
+- Merged status bar indicator (**$(sparkle) Inception**): locally tracked token usage in the text and tooltip, with one menu (**Inception: Show Usage**) covering usage details, inline-completion toggles, the completion model, and connection actions.
+- Local usage tracking across Copilot Chat and inline completions, persisted across sessions, with a dashboard deep link (`inceptionCopilot.openUsage`).
 - Inline autocomplete for any file via the Inception fill-in-the-middle endpoint and Mercury Edit, with debounce, cancellation, and a per-request timeout.
 - Next-edit suggestions via the Inception edit endpoint, using recently viewed snippets, a cursor-centered editable region, and your recent edit history.
-- Status bar menu (**$(sparkle) Mercury**) to toggle either feature, switch the completion model, and open settings.
+- Inline-completion controls (toggle either feature, switch the completion model, open settings) live in the merged status bar menu (**Inception: Show Usage**).
 - Optional outcome feedback: accepted suggestions are reported to Inception to improve model quality, sending only outcome metadata (`inceptionCopilot.sendFeedback`).
 
 Mercury 2 currently advertises a 128,000-token context window and 50,000-token maximum output. The default request output budget is 16,384 tokens. Live model limits override fallback metadata. Token counting is an estimate (characters divided by four).
@@ -65,6 +68,13 @@ Multiple inline-completion extensions can compete for Tab. For the best experien
 | `inceptionCopilot.nextEdit.historyDepth` | `5` | Recent edits sent as diff history; 0 disables |
 | `inceptionCopilot.nextEdit.requestTimeoutMs` | `8000` | Per-request timeout in milliseconds |
 | `inceptionCopilot.sendFeedback` | `true` | Report accepted-suggestion outcomes to Inception (metadata only) |
+| `inceptionCopilot.showUsageStatusBar` | `true` | Show locally tracked token usage and estimated spend in the status bar |
+
+## Usage tracking
+
+The extension tracks tokens and requests locally on this device: every Copilot Chat response plus accepted inline autocomplete and next-edit requests accumulate into a per-credential snapshot that survives restarts. A single merged status bar item shows compact totals (**$(graph) Inception …**) with completion feature states in its tooltip, and **Inception: Show Usage** opens one menu with tracked tokens (input, output, cached, reasoning), an estimated spend, the inline-completion toggles and model picker, and a dashboard deep link (**Inception: Open Usage Dashboard** opens the Inception Platform usage page). The `inceptionCopilot.showUsageStatusBar` setting hides the item (the menu stays reachable from the command palette).
+
+Estimates use the published Mercury rates ($0.25 input, $0.025 cached input, $0.75 output per 1M tokens) applied to reported token counts. Counts are device-local: they start when the extension first records usage, exclude other tools sharing your key, and do not reflect Inception's billing or the free-token grant — the [Inception dashboard](https://platform.inceptionlabs.ai/dashboard/logs) is authoritative. No prompts, responses, or API keys are stored; only token counts, model ids, and request outcome metadata.
 
 ## Settings
 

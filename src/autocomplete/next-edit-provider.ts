@@ -15,6 +15,7 @@ import {
   type RegionGeometry,
 } from "./next-edit";
 import { EditHistoryTracker, RecentSnippetsTracker } from "./tracker";
+import { type InlineUsageListener } from "./usage";
 import { displayPath, hasMultipleSelections, isTrackedScheme } from "./vscode-context";
 
 export const NEXT_EDIT_ACCEPTED_COMMAND = "inceptionCopilot.nextEdit.accepted";
@@ -50,6 +51,7 @@ export class MercuryNextEditProvider implements vscode.InlineCompletionItemProvi
     private readonly editHistory: EditHistoryTracker,
     private readonly recentSnippets: RecentSnippetsTracker,
     private readonly output: vscode.OutputChannel,
+    private readonly onUsage?: InlineUsageListener,
   ) {}
 
   /** Response id of the most recently returned suggestion, for feedback. */
@@ -138,6 +140,7 @@ export class MercuryNextEditProvider implements vscode.InlineCompletionItemProvi
       }
       this._lastSuggestionId = completion.id ?? undefined;
       this.logUsage(settings.model, completion, Date.now() - started);
+      if (this.onUsage) this.onUsage({ feature: "next-edit", model: settings.model, apiKey, usage: completion.usage });
 
       const newRegion = parseNextEditResponse(completion.text);
       if (!newRegion) return undefined;

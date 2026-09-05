@@ -10,6 +10,8 @@ export interface EditCompletionRequest {
 export interface EditUsage {
   readonly promptTokens: number;
   readonly completionTokens: number;
+  readonly cachedTokens?: number;
+  readonly reasoningTokens?: number;
 }
 
 export interface EditCompletion {
@@ -21,10 +23,19 @@ export interface EditCompletion {
   readonly warning?: string;
 }
 
+interface UsagePayload {
+  prompt_tokens?: unknown;
+  completion_tokens?: unknown;
+  cached_input_tokens?: unknown;
+  reasoning_tokens?: unknown;
+  prompt_tokens_details?: unknown;
+  completion_tokens_details?: unknown;
+}
+
 interface EditResponsePayload {
   id?: unknown;
   choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
-  usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+  usage?: UsagePayload;
   warning?: unknown;
 }
 
@@ -114,14 +125,32 @@ function contentTextParts(content: unknown): string | undefined {
 
 function parseUsage(usage: unknown): EditUsage | undefined {
   if (!usage || typeof usage !== "object") return undefined;
-  const promptTokens = positiveInteger((usage as { prompt_tokens?: unknown }).prompt_tokens);
-  const completionTokens = positiveInteger((usage as { completion_tokens?: unknown }).completion_tokens);
+  const raw = usage as UsagePayload;
+  const promptTokens = positiveInteger(raw.prompt_tokens);
+  const completionTokens = positiveInteger(raw.completion_tokens);
   if (promptTokens === undefined || completionTokens === undefined) return undefined;
-  return { promptTokens, completionTokens };
+  const promptDetails = isRecord(raw.prompt_tokens_details) ? raw.prompt_tokens_details : undefined;
+  const completionDetails = isRecord(raw.completion_tokens_details) ? raw.completion_tokens_details : undefined;
+  const cachedTokens = nonNegativeInteger(promptDetails?.cached_tokens ?? raw.cached_input_tokens);
+  const reasoningTokens = nonNegativeInteger(completionDetails?.reasoning_tokens ?? raw.reasoning_tokens);
+  return {
+    promptTokens,
+    completionTokens,
+    ...(cachedTokens === undefined ? {} : { cachedTokens }),
+    ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 async function editError(response: Response): Promise<Error> {

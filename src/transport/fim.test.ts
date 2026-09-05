@@ -60,6 +60,25 @@ test("streams fragmented SSE chunks into one completion", async () => {
   assert.equal(headers.Accept, "text/event-stream, application/json, application/problem+json");
 });
 
+test("parses cached and reasoning usage from nested details or flat fields", async () => {
+  const { fetcher } = fakeFetch(() => sseResponse([
+    'data: {"choices":[],"usage":{"prompt_tokens":24,"completion_tokens":14,"total_tokens":38,'
+      + '"prompt_tokens_details":{"cached_tokens":10},"completion_tokens_details":{"reasoning_tokens":2}}}\n\n',
+    "data: [DONE]\n\n",
+  ]));
+  const client = new FimClient("https://api.inceptionlabs.ai/v1/fim/completions", "agent", fetcher);
+  const completion = await client.complete("key", request(), new AbortController().signal);
+  assert.deepEqual(completion?.usage, { promptTokens: 24, completionTokens: 14, cachedTokens: 10, reasoningTokens: 2 });
+
+  const flat = fakeFetch(() => sseResponse([
+    'data: {"choices":[],"usage":{"prompt_tokens":24,"completion_tokens":14,"cached_input_tokens":10,"reasoning_tokens":2}}\n\n',
+    "data: [DONE]\n\n",
+  ]));
+  const flatClient = new FimClient("https://api.inceptionlabs.ai/v1/fim/completions", "agent", flat.fetcher);
+  const flatCompletion = await flatClient.complete("key", request(), new AbortController().signal);
+  assert.deepEqual(flatCompletion?.usage, { promptTokens: 24, completionTokens: 14, cachedTokens: 10, reasoningTokens: 2 });
+});
+
 test("recombines data lines split across network chunks", async () => {
   const encoder = new TextEncoder();
   const { fetcher } = fakeFetch(() => new Response(new ReadableStream<Uint8Array>({
