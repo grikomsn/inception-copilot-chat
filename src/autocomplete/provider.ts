@@ -27,12 +27,18 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
   private readonly debouncer = new CompletionDebouncer();
   private readonly inFlight = new Set<AbortController>();
   private missingKeyLogged = false;
+  private _lastSuggestionId: string | undefined;
 
   constructor(
     private readonly resolveApiKey: ApiKeyResolver,
     private readonly fim: FimClient,
     private readonly output: vscode.OutputChannel,
   ) {}
+
+  /** Response id of the most recently returned suggestion, for feedback. */
+  lastSuggestionId(): string | undefined {
+    return this._lastSuggestionId;
+  }
 
   dispose(): void {
     this.debouncer.dispose();
@@ -93,10 +99,12 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
         prompt: budgeted.prompt,
         suffix: budgeted.suffix,
         maxTokens: settings.maxTokens,
-      }, controller.signal);
+      }, controller.signal, () => !token.isCancellationRequested && !controller.signal.aborted && document.version === documentVersion);
+      if (!completion) return undefined;
       if (token.isCancellationRequested || controller.signal.aborted || document.version !== documentVersion) {
         return undefined;
       }
+      this._lastSuggestionId = completion.id ?? undefined;
       this.logUsage(settings.model, completion, Date.now() - started);
 
       const text = postprocessCompletion(completion.text);

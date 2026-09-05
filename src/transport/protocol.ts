@@ -1,5 +1,7 @@
 export const API_BASE = "https://api.inceptionlabs.ai/v1";
 
+export const FEEDBACK_URL = "https://api-feedback.inceptionlabs.ai/feedback";
+
 export const INCEPTION_ENDPOINTS = {
   models: `${API_BASE}/chat/completions/models`,
   chat: `${API_BASE}/chat/completions`,

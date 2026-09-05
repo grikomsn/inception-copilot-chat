@@ -40,7 +40,7 @@ export interface NextEditSettings {
 }
 
 export const NEXT_EDIT_DEFAULTS: NextEditSettings = {
-  enabled: true,
+  enabled: false,
   model: "mercury-edit-2",
   debounceMs: 150,
   maxTokens: 1024,

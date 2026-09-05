@@ -9,10 +9,16 @@ import { registerCommands } from "./commands/commands";
 import { messageOf } from "./errors";
 import { InceptionProvider } from "./provider";
 import { EditClient } from "./transport/edit";
+import { FeedbackClient } from "./transport/feedback";
 import { FimClient } from "./transport/fim";
-import { INCEPTION_ENDPOINTS, extensionUserAgent } from "./transport/protocol";
+import { FEEDBACK_URL, INCEPTION_ENDPOINTS, extensionUserAgent } from "./transport/protocol";
 
 const RECENT_SNIPPET_COUNT = 5;
+const PROVIDER_NAME = "inception-copilot-chat";
+
+interface SuggestionSource {
+  lastSuggestionId(): string | undefined;
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Inception");
@@ -28,6 +34,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const recentSnippets = new RecentSnippetsTracker(nextEditConfig.snippetContextLines, RECENT_SNIPPET_COUNT);
   const autocomplete = new MercuryAutocompleteProvider(resolveApiKey, fim, output);
   const nextEdit = new MercuryNextEditProvider(resolveApiKey, edit, editHistory, recentSnippets, output);
+  const feedback = new FeedbackClient(FEEDBACK_URL, PROVIDER_NAME, context.extension.packageJSON.version);
+  const reportAcceptance = (feature: string, source: SuggestionSource): void => {
+    logAcceptance(output, feature);
+    void deliverFeedback(output, feedback, source);
+  };
 
   context.subscriptions.push(
     output,
@@ -48,8 +59,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.lm.registerLanguageModelChatProvider("inception", provider),
     vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], autocomplete),
     vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], nextEdit),
-    vscode.commands.registerCommand(AUTOCOMPLETE_ACCEPTED_COMMAND, () => logAcceptance(output, "autocomplete")),
-    vscode.commands.registerCommand(NEXT_EDIT_ACCEPTED_COMMAND, () => logAcceptance(output, "next edit")),
+    vscode.commands.registerCommand(AUTOCOMPLETE_ACCEPTED_COMMAND, () => reportAcceptance("autocomplete", autocomplete)),
+    vscode.commands.registerCommand(NEXT_EDIT_ACCEPTED_COMMAND, () => reportAcceptance("next edit", nextEdit)),
     registerCompletionStatusBar({
       resolveApiKey,
       listModels: async () => edit.listModels((await resolveApiKey()) ?? "", [AUTOCOMPLETE_DEFAULTS.model]),
@@ -71,4 +82,16 @@ export function activate(context: vscode.ExtensionContext): void {
 function logAcceptance(output: vscode.OutputChannel, feature: string): void {
   if (!vscode.workspace.getConfiguration("inceptionCopilot").get("debugLogging", false)) return;
   output.appendLine(`[completions] ${feature} suggestion accepted`);
+}
+
+/** Best-effort outcome feedback; never sends code, prompts, or API keys. */
+async function deliverFeedback(output: vscode.OutputChannel, feedback: FeedbackClient, source: SuggestionSource): Promise<void> {
+  const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
+  if (!configuration.get("sendFeedback", true)) return;
+  const requestId = source.lastSuggestionId();
+  if (!requestId) return;
+  const delivered = await feedback.report(undefined, { requestId, userAction: "accept" });
+  if (!delivered && configuration.get("debugLogging", false)) {
+    output.appendLine("[completions] feedback delivery failed");
+  }
 }

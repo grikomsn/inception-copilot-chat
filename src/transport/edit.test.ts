@@ -40,6 +40,7 @@ test("posts a single user message with the tagged prompt", async () => {
   const completion = await client.complete("secret-key", request(), new AbortController().signal);
 
   assert.equal(completion.text, "def greet(name):\n    return name");
+  assert.equal(completion.id, "cmpl-2");
   assert.equal(completion.finishReason, "stop");
   assert.deepEqual(completion.usage, { promptTokens: 156, completionTokens: 18 });
   assert.equal(calls.length, 1);

@@ -42,6 +42,7 @@ export class MercuryNextEditProvider implements vscode.InlineCompletionItemProvi
   private readonly debouncer = new CompletionDebouncer();
   private readonly inFlight = new Set<AbortController>();
   private missingKeyLogged = false;
+  private _lastSuggestionId: string | undefined;
 
   constructor(
     private readonly resolveApiKey: ApiKeyResolver,
@@ -50,6 +51,11 @@ export class MercuryNextEditProvider implements vscode.InlineCompletionItemProvi
     private readonly recentSnippets: RecentSnippetsTracker,
     private readonly output: vscode.OutputChannel,
   ) {}
+
+  /** Response id of the most recently returned suggestion, for feedback. */
+  lastSuggestionId(): string | undefined {
+    return this._lastSuggestionId;
+  }
 
   dispose(): void {
     this.debouncer.dispose();
@@ -130,6 +136,7 @@ export class MercuryNextEditProvider implements vscode.InlineCompletionItemProvi
       if (token.isCancellationRequested || controller.signal.aborted || document.version !== documentVersion) {
         return undefined;
       }
+      this._lastSuggestionId = completion.id ?? undefined;
       this.logUsage(settings.model, completion, Date.now() - started);
 
       const newRegion = parseNextEditResponse(completion.text);

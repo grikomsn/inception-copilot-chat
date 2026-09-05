@@ -13,6 +13,8 @@ export interface EditUsage {
 }
 
 export interface EditCompletion {
+  /** Response identifier, used as the feedback request id. */
+  readonly id?: string;
   readonly text: string;
   readonly finishReason?: string;
   readonly usage?: EditUsage;
@@ -20,6 +22,7 @@ export interface EditCompletion {
 }
 
 interface EditResponsePayload {
+  id?: unknown;
   choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
   usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
   warning?: unknown;
@@ -92,6 +95,7 @@ function parseEditResponse(payload: unknown): EditCompletion {
   const text = typeof content === "string" ? content : contentTextParts(content);
   if (text === undefined) throw new Error("Inception returned no edit completion content");
   return {
+    id: typeof body.id === "string" ? body.id : undefined,
     text,
     finishReason: typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined,
     usage: parseUsage(body.usage),

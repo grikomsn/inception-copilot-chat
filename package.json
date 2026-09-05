@@ -140,6 +140,11 @@
           "default": false,
           "description": "Log request, stream, usage, and model-discovery metadata to the Inception output channel. Prompts and API keys are never logged."
         },
+        "inceptionCopilot.sendFeedback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Report suggestion acceptance outcomes to Inception to improve model quality. Only outcome metadata is sent; never code, prompts, or API keys."
+        },
         "inceptionCopilot.autocomplete": {
           "type": "object",
           "default": {
@@ -209,8 +214,8 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "default": true,
-              "description": "Provide next-edit suggestions using Mercury Edit."
+              "default": false,
+              "description": "Provide next-edit suggestions using Mercury Edit. Off by default; enable from the status bar menu."
             },
             "model": {
               "type": "string",

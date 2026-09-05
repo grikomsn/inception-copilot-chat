@@ -146,6 +146,7 @@ async function diagnostics(auth: InceptionAuth, output: vscode.OutputChannel): P
     `- Default reasoning effort: ${configuration.get("reasoningEffort", "medium")}`,
     `- Inline autocomplete: ${featureState(autocomplete)}`,
     `- Next edit suggestions: ${featureState(nextEdit)}`,
+    `- Suggestion feedback: ${configuration.get("sendFeedback", true) ? "on" : "off"}`,
     `- Registered models: ${models.length}`,
     "",
     ...models.map((model) => `- ${model.id} (${model.maxInputTokens} input tokens)`),
