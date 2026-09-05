@@ -26,9 +26,24 @@ Alternatively, run **Inception: Configure API Key** to keep a command-managed ke
 - Live chat-only model discovery, with a Mercury 2 fallback when discovery is unavailable.
 - Streaming text, sequential tool calling, usage reporting, cancellation, and total/idle request timeouts.
 - Mercury 2 reasoning choices: **Instant**, **Low**, **Medium** (default), and **High**.
-- Text-only chat; edit and fill-in-the-middle endpoints are outside this extension's scope.
+- Inline autocomplete for any file via the Inception fill-in-the-middle endpoint and Mercury Edit, with debounce, cancellation, and a per-request timeout.
 
 Mercury 2 currently advertises a 128,000-token context window and 50,000-token maximum output. The default request output budget is 16,384 tokens. Live model limits override fallback metadata. Token counting is an estimate (characters divided by four).
+
+## Autocomplete
+
+Inline suggestions come from the Mercury Edit fill-in-the-middle endpoint, separate from Copilot Chat's model picker. Suggestions are insertions at the cursor (or a replace-to-end-of-line while the IntelliSense widget is open); multi-line edits and deletions are not provided.
+
+Multiple inline-completion extensions can compete for Tab. For the best experience, disable other providers (for example `editor.inlineSuggest` toggles the feature globally, and GitHub Copilot's own suggestions can be turned off per language).
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `inceptionCopilot.autocomplete.enabled` | `true` | Provide inline autocomplete suggestions |
+| `inceptionCopilot.autocomplete.model` | `mercury-edit-2` | FIM model used for suggestions |
+| `inceptionCopilot.autocomplete.debounceMs` | `100` | Delay after typing stops; explicit invocations skip it |
+| `inceptionCopilot.autocomplete.maxTokens` | `256` | Tokens generated per suggestion |
+| `inceptionCopilot.autocomplete.maxPromptTokens` | `8192` | Prompt context budget; the prefix keeps three quarters |
+| `inceptionCopilot.autocomplete.requestTimeoutMs` | `5000` | Per-request timeout in milliseconds |
 
 ## Settings
 

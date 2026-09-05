@@ -1,17 +1,22 @@
 import * as vscode from "vscode";
+import { MercuryAutocompleteProvider, AUTOCOMPLETE_ACCEPTED_COMMAND } from "./autocomplete/provider";
 import { InceptionAuth } from "./auth/auth";
 import { registerCommands } from "./commands/commands";
 import { messageOf } from "./errors";
 import { InceptionProvider } from "./provider";
-import { extensionUserAgent } from "./transport/protocol";
+import { FimClient } from "./transport/fim";
+import { INCEPTION_ENDPOINTS, extensionUserAgent } from "./transport/protocol";
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Inception");
   const auth = new InceptionAuth(context.secrets);
-  const provider = new InceptionProvider(
-    auth,
+  const userAgent = extensionUserAgent(context.extension.packageJSON.version, vscode.version);
+  const provider = new InceptionProvider(auth, output, userAgent);
+  const fim = new FimClient(INCEPTION_ENDPOINTS.fim, userAgent);
+  const autocomplete = new MercuryAutocompleteProvider(
+    async () => (await auth.getApiKey()) ?? provider.firstConfiguredApiKey(),
+    fim,
     output,
-    extensionUserAgent(context.extension.packageJSON.version, vscode.version),
   );
 
   context.subscriptions.push(
@@ -23,6 +28,12 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.lm.registerLanguageModelChatProvider("inception", provider),
+    vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], autocomplete),
+    vscode.commands.registerCommand(AUTOCOMPLETE_ACCEPTED_COMMAND, () => {
+      if (vscode.workspace.getConfiguration("inceptionCopilot").get("debugLogging", false)) {
+        output.appendLine("[autocomplete] suggestion accepted");
+      }
+    }),
     ...registerCommands(auth, provider, output),
   );
 

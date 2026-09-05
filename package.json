@@ -27,6 +27,7 @@
     "mercury",
     "copilot",
     "copilot-chat",
+    "autocomplete",
     "api-key",
     "language-model"
   ],
@@ -114,6 +115,58 @@
           "type": "boolean",
           "default": false,
           "description": "Log request, stream, usage, and model-discovery metadata to the Inception output channel. Prompts and API keys are never logged."
+        },
+        "inceptionCopilot.autocomplete": {
+          "type": "object",
+          "default": {
+            "enabled": true,
+            "model": "mercury-edit-2",
+            "debounceMs": 100,
+            "maxTokens": 256,
+            "maxPromptTokens": 8192,
+            "requestTimeoutMs": 5000
+          },
+          "description": "Inline autocomplete powered by the Inception fill-in-the-middle endpoint.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Provide inline autocomplete suggestions using Mercury Edit."
+            },
+            "model": {
+              "type": "string",
+              "default": "mercury-edit-2",
+              "description": "Inception FIM model used for inline autocomplete."
+            },
+            "debounceMs": {
+              "type": "number",
+              "default": 100,
+              "minimum": 0,
+              "maximum": 2000,
+              "description": "Delay after typing stops before requesting a suggestion. Explicit invocations skip this delay."
+            },
+            "maxTokens": {
+              "type": "number",
+              "default": 256,
+              "minimum": 16,
+              "maximum": 8192,
+              "description": "Maximum tokens generated per autocomplete suggestion."
+            },
+            "maxPromptTokens": {
+              "type": "number",
+              "default": 8192,
+              "minimum": 256,
+              "maximum": 32000,
+              "description": "Prompt context budget (prefix plus suffix) in estimated tokens. The prefix keeps three quarters of the budget."
+            },
+            "requestTimeoutMs": {
+              "type": "number",
+              "default": 5000,
+              "minimum": 500,
+              "maximum": 60000,
+              "description": "Maximum duration of an autocomplete request in milliseconds."
+            }
+          }
         }
       }
     },
