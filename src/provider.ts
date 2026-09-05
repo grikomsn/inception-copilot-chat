@@ -80,6 +80,14 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     return models.map(({ id }) => id);
   }
 
+  /**
+   * Any API key captured from a native provider entry during model discovery.
+   * Used as a fallback when the command-managed key is absent.
+   */
+  firstConfiguredApiKey(): string | undefined {
+    return this.apiKeys.values().next().value ?? undefined;
+  }
+
   async provideLanguageModelChatInformation(
     options: vscode.PrepareLanguageModelChatModelOptions,
     token: vscode.CancellationToken,

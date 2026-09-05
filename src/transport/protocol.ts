@@ -1,8 +1,14 @@
 export const API_BASE = "https://api.inceptionlabs.ai/v1";
 
+export const FEEDBACK_URL = "https://api-feedback.inceptionlabs.ai/feedback";
+
 export const INCEPTION_ENDPOINTS = {
   models: `${API_BASE}/chat/completions/models`,
   chat: `${API_BASE}/chat/completions`,
+  fim: `${API_BASE}/fim/completions`,
+  fimModels: `${API_BASE}/fim/completions/models`,
+  edit: `${API_BASE}/edit/completions`,
+  editModels: `${API_BASE}/edit/completions/models`,
 } as const;
 
 export function extensionUserAgent(version: string, vscodeVersion: string): string {

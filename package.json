@@ -27,6 +27,7 @@
     "mercury",
     "copilot",
     "copilot-chat",
+    "autocomplete",
     "api-key",
     "language-model"
   ],
@@ -64,8 +65,32 @@
       {
         "command": "inceptionCopilot.diagnostics",
         "title": "Inception: Show Diagnostics"
+      },
+      {
+        "command": "inceptionCopilot.completionMenu",
+        "title": "Inception: Completion Settings"
+      },
+      {
+        "command": "inceptionCopilot.autocomplete.accepted",
+        "title": "Inception: Log Autocomplete Acceptance"
+      },
+      {
+        "command": "inceptionCopilot.nextEdit.accepted",
+        "title": "Inception: Log Next Edit Acceptance"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "inceptionCopilot.autocomplete.accepted",
+          "when": "false"
+        },
+        {
+          "command": "inceptionCopilot.nextEdit.accepted",
+          "when": "false"
+        }
+      ]
+    },
     "configuration": {
       "title": "Inception for Copilot Chat",
       "properties": {
@@ -114,6 +139,139 @@
           "type": "boolean",
           "default": false,
           "description": "Log request, stream, usage, and model-discovery metadata to the Inception output channel. Prompts and API keys are never logged."
+        },
+        "inceptionCopilot.sendFeedback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Report suggestion acceptance outcomes to Inception to improve model quality. Only outcome metadata is sent; never code, prompts, or API keys."
+        },
+        "inceptionCopilot.autocomplete": {
+          "type": "object",
+          "default": {
+            "enabled": true,
+            "model": "mercury-edit-2",
+            "debounceMs": 100,
+            "maxTokens": 256,
+            "maxPromptTokens": 8192,
+            "requestTimeoutMs": 5000
+          },
+          "description": "Inline autocomplete powered by the Inception fill-in-the-middle endpoint.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Provide inline autocomplete suggestions using Mercury Edit."
+            },
+            "model": {
+              "type": "string",
+              "default": "mercury-edit-2",
+              "description": "Inception FIM model used for inline autocomplete."
+            },
+            "debounceMs": {
+              "type": "number",
+              "default": 100,
+              "minimum": 0,
+              "maximum": 2000,
+              "description": "Delay after typing stops before requesting a suggestion. Explicit invocations skip this delay."
+            },
+            "maxTokens": {
+              "type": "number",
+              "default": 256,
+              "minimum": 16,
+              "maximum": 8192,
+              "description": "Maximum tokens generated per autocomplete suggestion."
+            },
+            "maxPromptTokens": {
+              "type": "number",
+              "default": 8192,
+              "minimum": 256,
+              "maximum": 32000,
+              "description": "Prompt context budget (prefix plus suffix) in estimated tokens. The prefix keeps three quarters of the budget."
+            },
+            "requestTimeoutMs": {
+              "type": "number",
+              "default": 5000,
+              "minimum": 500,
+              "maximum": 60000,
+              "description": "Maximum duration of an autocomplete request in milliseconds."
+            }
+          }
+        },
+        "inceptionCopilot.nextEdit": {
+          "type": "object",
+          "default": {
+            "enabled": true,
+            "model": "mercury-edit-2",
+            "debounceMs": 150,
+            "maxTokens": 1024,
+            "editableLines": 15,
+            "maxPromptTokens": 16384,
+            "snippetContextLines": 10,
+            "historyDepth": 5,
+            "requestTimeoutMs": 8000
+          },
+          "description": "Next-edit suggestions powered by the Inception edit endpoint.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Provide next-edit suggestions using Mercury Edit. Off by default; enable from the status bar menu."
+            },
+            "model": {
+              "type": "string",
+              "default": "mercury-edit-2",
+              "description": "Inception edit model used for next-edit suggestions."
+            },
+            "debounceMs": {
+              "type": "number",
+              "default": 150,
+              "minimum": 0,
+              "maximum": 2000,
+              "description": "Delay after typing stops before requesting a suggestion. Explicit invocations skip this delay."
+            },
+            "maxTokens": {
+              "type": "number",
+              "default": 1024,
+              "minimum": 64,
+              "maximum": 8192,
+              "description": "Maximum tokens generated for the updated editable region."
+            },
+            "editableLines": {
+              "type": "number",
+              "default": 15,
+              "minimum": 5,
+              "maximum": 25,
+              "description": "Size of the editable region around the cursor in lines. Larger regions increase latency."
+            },
+            "maxPromptTokens": {
+              "type": "number",
+              "default": 16384,
+              "minimum": 1024,
+              "maximum": 32000,
+              "description": "Estimated token budget for the current-file context. Distant regions are trimmed when the file exceeds it."
+            },
+            "snippetContextLines": {
+              "type": "number",
+              "default": 10,
+              "minimum": 0,
+              "maximum": 50,
+              "description": "Lines of context captured around recent cursor positions in other files."
+            },
+            "historyDepth": {
+              "type": "number",
+              "default": 5,
+              "minimum": 0,
+              "maximum": 10,
+              "description": "Number of recent edits sent as diff history. 0 disables edit history."
+            },
+            "requestTimeoutMs": {
+              "type": "number",
+              "default": 8000,
+              "minimum": 1000,
+              "maximum": 60000,
+              "description": "Maximum duration of a next-edit request in milliseconds."
+            }
+          }
         }
       }
     },
