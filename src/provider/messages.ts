@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
 
-interface ApiMessage {
+export interface ApiMessage {
   role: "user" | "assistant" | "tool";
   content: string | null;
   tool_calls?: ApiToolCall[];
   tool_call_id?: string;
 }
 
-interface ApiToolCall {
+export interface ApiToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
@@ -64,4 +64,3 @@ function inputPartText(part: vscode.LanguageModelInputPart | unknown): string {
 export function messageToText(message: vscode.LanguageModelChatRequestMessage): string {
   return message.content.map(inputPartText).join("\n");
 }
-

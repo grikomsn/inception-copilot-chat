@@ -14,6 +14,9 @@ import {
   DEFAULT_REASONING_EFFORT,
   applyReasoningEffort,
   buildModelConfigurationSchema,
+  contextSizeOptions,
+  resolveContextCap,
+  resolveContextSize,
   resolveReasoningEffort,
   type ReasoningEffort,
 } from "./models/options";
@@ -224,7 +227,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
           ? (apiKey ? "Inception Platform" : "Inception API key required")
           : `Inception Platform · ${credentialRef.slice(0, 8)}`,
         tooltip: tooltipParts.join(" · "),
-        maxInputTokens: metadata.contextLength,
+        maxInputTokens: Math.max(1, metadata.contextLength - metadata.maxOutputTokens),
         maxOutputTokens: metadata.maxOutputTokens,
         isUserSelectable: true,
         ...(pricing === undefined ? {} : pricing),
@@ -232,7 +235,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
         ...(credentialRef === "legacy" && !apiKey
           ? { requiresAuthorization: { label: "Configure Inception API key" } }
           : {}),
-        configurationSchema: buildModelConfigurationSchema(defaultEffort),
+        configurationSchema: buildModelConfigurationSchema(defaultEffort, contextSizeOptions(Math.max(1, metadata.contextLength - metadata.maxOutputTokens))),
         capabilities: {
           imageInput: false,
           toolCalling: true,
@@ -254,7 +257,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       options.modelConfiguration,
       this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
     );
-    const requestBody = buildRequest(model.rawModelId, messages, options, reasoningEffort, model.maxOutputTokens, this.configuration.get("maxOutputTokens", 16384));
+    const requestBody = buildRequest(model.rawModelId, messages, options, reasoningEffort, model.maxOutputTokens, this.configuration.get("maxOutputTokens", 16384), resolveContextCap(resolveContextSize(options.modelConfiguration), model.maxInputTokens));
     const controller = new AbortController();
     const cancellation = token.onCancellationRequested(() => controller.abort());
     const timeoutSeconds = Math.max(10, this.configuration.get("requestTimeoutSeconds", 600));
