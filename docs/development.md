@@ -16,8 +16,6 @@ Install the local build with:
 code --install-extension inception-copilot-chat-<version>.vsix --force
 ```
 
-For a live API check, put `INCEPTION_API_KEY` in an ignored local `.env` file or your shell environment. Never commit credentials or paste them into an issue.
-
 ## Release workflow
 
 User-visible pull requests normally include a Changeset:
@@ -35,13 +33,3 @@ The packaged extension contains compiled runtime files, Marketplace metadata, th
 
 - https://docs.inceptionlabs.ai/llms-full.txt
 - https://api.inceptionlabs.ai/openapi.json
-
-## Opt-in live Extension Development Host test
-
-Put `INCEPTION_API_KEY` in the ignored `.env`, compile, then run:
-
-```sh
-code --extensionDevelopmentPath="$PWD" --extensionTestsPath="$PWD/scripts/vscode-smoke.cjs" --user-data-dir=/tmp/inception-vscode-smoke-profile --disable-extensions
-```
-
-This makes five billable inference requests. It verifies activation, discovery, streaming, a required tool call, a tool-result round trip, and one fill-in-the-middle plus one edit-completion request using actual VS Code response types. It writes only success metadata to `/tmp/inception-vscode-smoke.json`. It does not exercise the signed-in Copilot Chat UI. Never add credentials or captured responses to test fixtures.
