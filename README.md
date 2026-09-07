@@ -91,7 +91,7 @@ Estimates use the published Mercury rates ($0.25 input, $0.025 cached input, $0.
 
 Use Node.js 22+ and npm. Run `npm ci`, `npm run check`, and `npm run package`. Press F5 to launch the Extension Development Host. Tests are colocated under `src/`. See [development](docs/development.md) and [security](docs/security.md).
 
-API credentials stay in VS Code Secret Storage or native secret provider configuration. Requests go directly to `https://api.inceptionlabs.ai/v1`; no proxy is involved. `.env` is only for explicitly invoked local smoke tests and is excluded from Git and the VSIX.
+API credentials stay in VS Code Secret Storage or native secret provider configuration. Requests go directly to `https://api.inceptionlabs.ai/v1`; no proxy is involved.
 
 This is an independent community extension, unaffiliated with Inception Labs, Microsoft, or GitHub. API usage is billed by Inception.
 
