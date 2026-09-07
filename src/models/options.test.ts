@@ -17,8 +17,8 @@ test("supports the documented four reasoning levels and picker precedence", () =
 });
 
 test("offers context tiers below the registered input limit", () => {
-  assert.deepEqual(contextSizeOptions(128_000)?.map((option) => option.value), [0, 65_536, 128_000]);
-  assert.deepEqual(contextSizeOptions(128_000)?.map((option) => option.label), ["Auto", "64K", "Maximum"]);
+  assert.deepEqual(contextSizeOptions(78_000)?.map((option) => option.value), [0, 65_536, 78_000]);
+  assert.deepEqual(contextSizeOptions(78_000)?.map((option) => option.label), ["Auto", "64K", "Maximum"]);
   assert.equal(contextSizeOptions(65_536), undefined);
   assert.equal(contextSizeOptions(32_000), undefined);
 });
@@ -38,9 +38,9 @@ test("reads the context size from picker configuration", () => {
 });
 
 test("exposes the Context Window control alongside reasoning levels", () => {
-  const schema = buildModelConfigurationSchema("medium", contextSizeOptions(128_000));
+  const schema = buildModelConfigurationSchema("medium", contextSizeOptions(78_000));
   assert.deepEqual(schema.properties.reasoningEffort.enum, [...REASONING_EFFORTS]);
-  assert.deepEqual(schema.properties.contextSize.enum, [0, 65_536, 128_000]);
+  assert.deepEqual(schema.properties.contextSize.enum, [0, 65_536, 78_000]);
   assert.equal(schema.properties.contextSize.default, 0);
   assert.equal(schema.properties.contextSize.group, "navigation");
 

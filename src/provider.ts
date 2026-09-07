@@ -227,7 +227,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
           ? (apiKey ? "Inception Platform" : "Inception API key required")
           : `Inception Platform · ${credentialRef.slice(0, 8)}`,
         tooltip: tooltipParts.join(" · "),
-        maxInputTokens: metadata.contextLength,
+        maxInputTokens: Math.max(1, metadata.contextLength - metadata.maxOutputTokens),
         maxOutputTokens: metadata.maxOutputTokens,
         isUserSelectable: true,
         ...(pricing === undefined ? {} : pricing),
@@ -235,7 +235,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
         ...(credentialRef === "legacy" && !apiKey
           ? { requiresAuthorization: { label: "Configure Inception API key" } }
           : {}),
-        configurationSchema: buildModelConfigurationSchema(defaultEffort, contextSizeOptions(metadata.contextLength)),
+        configurationSchema: buildModelConfigurationSchema(defaultEffort, contextSizeOptions(Math.max(1, metadata.contextLength - metadata.maxOutputTokens))),
         capabilities: {
           imageInput: false,
           toolCalling: true,
