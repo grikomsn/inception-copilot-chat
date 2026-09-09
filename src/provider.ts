@@ -334,9 +334,10 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     const credentialRef = "legacy";
     const apiKey = await this.requireApiKey(false, credentialRef);
     const models = this.catalogFor(credentialRef);
-    const model = models.some(({ id }) => id === "mercury-2")
-      ? "mercury-2"
-      : models[0]?.id ?? FALLBACK_MODELS[0];
+    const preferred = FALLBACK_MODELS[0];
+    const model = models.some(({ id }) => id === preferred)
+      ? preferred
+      : models[0]?.id ?? preferred;
     const reasoningEffort = resolveReasoningEffort(
       undefined,
       this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
