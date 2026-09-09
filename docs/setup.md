@@ -7,7 +7,8 @@ See the [README](../README.md#setup) for native provider configuration, commands
 Each model entry exposes a Context Window control in the Copilot Chat model
 picker (`src/models/options.ts`). The options are Auto (the default), fixed
 64K, 128K, and 200K tiers that fit below the model's registered input limit,
-and Maximum. Auto and Maximum keep the default behavior.
+and Maximum. Auto and Maximum keep the default behavior. Mercury 2.5's ~194K
+usable input budget exposes 64K and 128K; Mercury 2's ~78K budget exposes 64K.
 
 A specific tier acts as a local upper limit: the selection is stored per model
 by VS Code, never exceeds the model's registered input limit, and when the

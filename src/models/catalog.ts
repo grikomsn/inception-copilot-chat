@@ -1,6 +1,6 @@
-import { MERCURY_MODEL_COST, modelCostFromApi, type ModelCost } from "./pricing";
+import { MERCURY_2_5_MODEL_COST, MERCURY_MODEL_COST, modelCostFromApi, type ModelCost } from "./pricing";
 
-export const FALLBACK_MODELS = ["mercury-2"] as const;
+export const FALLBACK_MODELS = ["mercury-2.5", "mercury-2"] as const;
 export const DEFAULT_MAX_INPUT_TOKENS = 128_000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 50_000;
 
@@ -17,15 +17,32 @@ export interface InceptionApiModel {
   readonly max_output_length?: unknown;
   readonly pricing?: unknown;
 }
-export const FALLBACK_MODEL_METADATA: readonly InceptionModelMetadata[] = [{
-  id: "mercury-2", version: "2", contextLength: DEFAULT_MAX_INPUT_TOKENS,
-  maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS, cost: MERCURY_MODEL_COST,
-}];
+export const FALLBACK_MODEL_METADATA: readonly InceptionModelMetadata[] = [
+  {
+    id: "mercury-2.5",
+    version: "2.5",
+    contextLength: 260_000,
+    maxOutputTokens: 65_536,
+    cost: MERCURY_2_5_MODEL_COST,
+  },
+  {
+    id: "mercury-2",
+    version: "2",
+    contextLength: DEFAULT_MAX_INPUT_TOKENS,
+    maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+    cost: MERCURY_MODEL_COST,
+  },
+];
 export function isInceptionChatModel(id: string): boolean {
   return id.startsWith("mercury") && !/(edit|fim|embedding)/i.test(id);
 }
 export function orderModels(ids: readonly string[]): string[] {
-  return [...new Set(ids)].filter(isInceptionChatModel).sort();
+  const preferred = new Map(FALLBACK_MODEL_METADATA.map((model, index) => [model.id, index]));
+  return [...new Set(ids)].filter(isInceptionChatModel).sort((a, b) => {
+    const left = preferred.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const right = preferred.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return left !== right ? left - right : a.localeCompare(b);
+  });
 }
 export function getModelMetadata(id: string): InceptionModelMetadata {
   return FALLBACK_MODEL_METADATA.find(model => model.id === id) ?? {

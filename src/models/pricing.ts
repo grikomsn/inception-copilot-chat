@@ -15,11 +15,24 @@ export interface ModelPricingFields {
 }
 
 /**
- * Published Mercury rates (USD per 1M tokens): $0.25 input, $0.025 cached
- * input, $0.75 output. Used only when live discovery omits pricing; Mercury 2
- * and Mercury Edit 2 share these rates.
+ * Published Mercury 2 / Mercury Edit 2 rates (USD per 1M tokens): $0.25 input,
+ * $0.025 cached input, $0.75 output. Used only when live discovery omits pricing.
  */
 export const MERCURY_MODEL_COST: ModelCost = { input: 0.25, cacheRead: 0.025, output: 0.75 };
+
+/**
+ * Published Mercury 2.5 rates (USD per 1M tokens): $0.04 input, $0.004 cached
+ * input, $0.15 output (current launch pricing). Used only when live discovery
+ * omits pricing.
+ */
+export const MERCURY_2_5_MODEL_COST: ModelCost = { input: 0.04, cacheRead: 0.004, output: 0.15 };
+
+/** Documented fallback rates for a known model id; live discovery overrides these. */
+export function publishedModelCost(id: string): ModelCost | undefined {
+  if (id === "mercury-2.5") return MERCURY_2_5_MODEL_COST;
+  if (id === "mercury-2" || id.startsWith("mercury-edit")) return MERCURY_MODEL_COST;
+  return undefined;
+}
 
 /** Live discovery is authoritative; this is a passthrough kept for parity. */
 export function inceptionModelCost(_id: string, discovered?: ModelCost): ModelCost | undefined {

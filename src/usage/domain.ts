@@ -1,5 +1,7 @@
 /** Provider usage normalization, local token tracking, and display formatting. */
 
+import { MERCURY_MODEL_COST, publishedModelCost } from "../models/pricing";
+
 export interface ProviderUsagePayload {
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -8,14 +10,19 @@ export interface ProviderUsagePayload {
   completion_tokens_details?: { reasoning_tokens: number };
 }
 
+/** Nanodollars (10^-9 USD) per token from a per-million USD rate. */
+function nanodollarsPerToken(usdPerMillion: number): number {
+  return Math.round(usdPerMillion * 1_000);
+}
+
 /**
- * Published Mercury rates as integer nanodollars (10^-9 USD) per token:
- * $0.25/1M input, $0.025/1M cached input, $0.75/1M output. Cache-write tokens
- * are currently free. Local estimates only; Inception billing is authoritative.
+ * Default Mercury 2 rates as integer nanodollars (10^-9 USD) per token:
+ * $0.25/1M input, $0.025/1M cached input, $0.75/1M output. Used when a model
+ * has no published card. Cache-write tokens are currently free.
  */
-export const INPUT_NANODOLLARS_PER_TOKEN = 250;
-export const CACHED_INPUT_NANODOLLARS_PER_TOKEN = 25;
-export const OUTPUT_NANODOLLARS_PER_TOKEN = 750;
+export const INPUT_NANODOLLARS_PER_TOKEN = nanodollarsPerToken(MERCURY_MODEL_COST.input);
+export const CACHED_INPUT_NANODOLLARS_PER_TOKEN = nanodollarsPerToken(MERCURY_MODEL_COST.cacheRead ?? 0);
+export const OUTPUT_NANODOLLARS_PER_TOKEN = nanodollarsPerToken(MERCURY_MODEL_COST.output);
 
 export interface RequestTokenUsage {
   readonly modelId: string;
@@ -73,18 +80,20 @@ export function toProviderUsagePayload(raw: Record<string, unknown>): ProviderUs
 }
 
 /**
- * Local cost estimate from published Mercury rates. Cached prompt tokens are a
- * subset of `prompt_tokens`, so they are billed at the cached rate instead of
- * the input rate. Returns `undefined` when token counts are incomplete.
+ * Local cost estimate from each model's published rates. Cached prompt tokens
+ * are a subset of `prompt_tokens`, so they are billed at the cached rate
+ * instead of the input rate. Unknown models use Mercury 2 rates. Returns
+ * `undefined` when token counts are incomplete.
  */
-export function estimateCostUsdNanos(usage: ProviderUsagePayload): number | undefined {
+export function estimateCostUsdNanos(usage: ProviderUsagePayload, modelId?: string): number | undefined {
   if (usage.prompt_tokens === undefined || usage.completion_tokens === undefined) return undefined;
   const prompt = Math.max(0, usage.prompt_tokens);
   const cached = Math.min(Math.max(0, usage.prompt_tokens_details?.cached_tokens ?? 0), prompt);
   const completion = Math.max(0, usage.completion_tokens);
-  return (prompt - cached) * INPUT_NANODOLLARS_PER_TOKEN
-    + cached * CACHED_INPUT_NANODOLLARS_PER_TOKEN
-    + completion * OUTPUT_NANODOLLARS_PER_TOKEN;
+  const cost = (modelId === undefined ? undefined : publishedModelCost(modelId)) ?? MERCURY_MODEL_COST;
+  return (prompt - cached) * nanodollarsPerToken(cost.input)
+    + cached * nanodollarsPerToken(cost.cacheRead ?? 0)
+    + completion * nanodollarsPerToken(cost.output);
 }
 
 export function recordRequestUsage(
@@ -105,7 +114,7 @@ export function recordRequestUsage(
     totalTokens,
     cachedTokens: usage.prompt_tokens_details?.cached_tokens,
     reasoningTokens: usage.completion_tokens_details?.reasoning_tokens,
-    costUsdNanos: estimateCostUsdNanos(usage),
+    costUsdNanos: estimateCostUsdNanos(usage, modelId),
   });
   const previous = current?.tracked;
   const tracked: TrackedTokenUsage = {
@@ -115,7 +124,7 @@ export function recordRequestUsage(
     totalTokens: (previous?.totalTokens ?? 0) + (totalTokens ?? 0),
     cachedTokens: (previous?.cachedTokens ?? 0) + (usage.prompt_tokens_details?.cached_tokens ?? 0),
     reasoningTokens: (previous?.reasoningTokens ?? 0) + (usage.completion_tokens_details?.reasoning_tokens ?? 0),
-    costUsdNanos: (previous?.costUsdNanos ?? 0) + (estimateCostUsdNanos(usage) ?? 0),
+    costUsdNanos: (previous?.costUsdNanos ?? 0) + (estimateCostUsdNanos(usage, modelId) ?? 0),
   };
   return { ...current, lastRequest, tracked, updatedAt: recordedAt };
 }
@@ -175,7 +184,7 @@ export function formatUsageTooltip(snapshot: InceptionUsageSnapshot): string {
   const tracked = snapshot.tracked;
   if (tracked) {
     lines.push(`Tokens: ${tracked.totalTokens.toLocaleString()} across ${tracked.requests.toLocaleString()} requests`);
-    lines.push(`Estimated spend: ${formatUsdNanos(tracked.costUsdNanos)} (published Mercury rates)`);
+    lines.push(`Estimated spend: ${formatUsdNanos(tracked.costUsdNanos)} (published per-model rates)`);
   }
   if (snapshot.lastRequest) lines.push(`Last request: ${formatRequestUsage(snapshot.lastRequest)}`);
   if (snapshot.error) lines.push("Inception reported a request error; see details");
@@ -204,7 +213,7 @@ export function formatUsageRows(snapshot: InceptionUsageSnapshot): UsageDisplayR
       kind: "estimate",
       label: "Estimated spend",
       description: formatUsdNanos(tracked.costUsdNanos),
-      detail: "Local estimate from published Mercury rates ($0.25 / $0.025 cached / $0.75 per 1M tokens); excludes free-grant tokens. The Inception dashboard is authoritative.",
+      detail: "Local estimate from each model's published rates; excludes free-grant tokens. The Inception dashboard is authoritative.",
     });
   }
   if (snapshot.lastRequest) {
