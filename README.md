@@ -87,6 +87,10 @@ Estimates use each model's published rates applied to reported token counts (Mer
 | `inceptionCopilot.catalogCacheMinutes` | `5` | Model catalog refresh interval |
 | `inceptionCopilot.debugLogging` | `false` | Metadata-only diagnostics |
 
+## Documentation
+
+- [Models and pricing](docs/models.md)
+
 ## Development
 
 Use Node.js 22+ and npm. Run `npm ci`, `npm run check`, and `npm run package`. Press F5 to launch the Extension Development Host. Tests are colocated under `src/`. See [development](docs/development.md) and [security](docs/security.md).

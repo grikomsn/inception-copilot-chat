@@ -1,4 +1,4 @@
-# API key and security
+# Security
 
 ## Credential storage
 
@@ -8,7 +8,7 @@ Use **Inception: Remove API Key** to delete the saved credential. Replacing a ke
 
 Provider entries created through **Manage Language Models** receive their API key through VS Code's provider configuration and are kept separate from the legacy command-managed key. A short one-way fingerprint is used in memory only to distinguish entries; the key itself is never used as a model identifier or log value.
 
-## Network destination
+## Network destinations
 
 The extension sends requests directly to:
 
@@ -27,5 +27,7 @@ The inference base URL is fixed in the extension instead of being workspace-conf
 ## Logging
 
 Debug logging is disabled by default. When enabled, the Inception output channel records model discovery, request metadata, token usage, and errors; it does not intentionally log prompts or API keys.
+
+## Reporting vulnerabilities
 
 Report vulnerabilities according to the [security policy](https://github.com/grikomsn/inception-copilot-chat/security/policy) or email [security@nibras.co](mailto:security@nibras.co). Do not disclose credentials, sensitive prompts, or vulnerability details in a public issue.

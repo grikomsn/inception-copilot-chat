@@ -1,33 +1,53 @@
-# Development and releases
+# Development
 
-## Local workflow
+## Prerequisites
+
+- Node.js 22 or newer
+- npm
+- VS Code 1.125 or newer
+
+## Validate
 
 ```bash
-npm install
+npm ci
 npm test
 npm run package
+npx vsce ls
 ```
 
-Tests are colocated with the modules they cover under `src/auth/`, `src/autocomplete/`, `src/models/`, `src/transport/`, and `src/usage/`. `npm test` performs a clean compile and runs credential-storage, provider-configuration, model-filtering, stream-parser, protocol, FIM/edit clients, autocomplete context and postprocessing, next-edit prompt and region mapping, diff hunks, debounce, and usage tests. `npm run package` validates the project and creates an installable VSIX.
+The tests compile strict TypeScript and use Node's built-in test runner. Network
+paths use injected fetch fakes; the normal test suite never reads `.env` or
+calls Inception. `npm run package` validates the project and creates an
+installable VSIX.
 
-Install the local build with:
+## Extension Development Host
 
-```bash
-code --install-extension inception-copilot-chat-<version>.vsix --force
-```
+1. Open this repository in VS Code.
+2. Press F5 and choose **Run Extension**.
+3. In the new window, run **Inception: Configure API Key**.
+4. Run **Inception: Test Inference**.
+5. Open Copilot Chat and confirm the Inception model group appears.
+6. Check a thinking model exposes the expected effort submenu and renders a
+   thinking part separately.
+7. Use agent mode to verify a model emits and completes a tool call.
+8. Inspect diagnostics and logs for accidental sensitive output.
 
-## Release workflow
+## Release
 
-User-visible pull requests normally include a Changeset:
+Add a Changeset for user-visible work:
 
 ```bash
 npm run changeset
 ```
 
-Changesets maintains a version pull request on `main`. Merging that pull request publishes the VSIX to the Visual Studio Marketplace and attaches the same artifact to a GitHub release. The release workflow skips an existing version tag, preventing duplicate publication.
+Merging to `main` updates or creates a version pull request. After the version
+pull request merges, release automation validates the project, publishes the
+VSIX to the Marketplace, and creates a GitHub release.
 
-The packaged extension contains compiled runtime files, Marketplace metadata, the changelog, license, README, and icon. Source, tests, maps, repository automation, project documentation, secrets, and local build artifacts are excluded by `.vscodeignore`.
-
+The packaged extension contains compiled runtime files, Marketplace metadata,
+the changelog, license, README, and icon. Source, tests, maps, repository
+automation, project documentation, secrets, and local build artifacts are
+excluded by `.vscodeignore`.
 
 ## API references
 
