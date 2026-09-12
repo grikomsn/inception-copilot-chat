@@ -89,7 +89,7 @@ Estimates use each model's published rates applied to reported token counts (Mer
 
 ## Development
 
-Use Node.js 22+ and npm. Run `npm ci`, `npm run check`, and `npm run package`. Press F5 to launch the Extension Development Host. Tests are colocated under `src/`. See [development](docs/development.md) and [security](docs/security.md).
+Use Node.js 22+ and npm. Run `npm ci`, `npm run check`, and `npm run package`. Press F5 to launch the Extension Development Host. Tests are colocated under `src/`. See [models](docs/models.md), [development](docs/development.md), and [security](docs/security.md).
 
 API credentials stay in VS Code Secret Storage or native secret provider configuration. Requests go directly to `https://api.inceptionlabs.ai/v1`; no proxy is involved.
 
