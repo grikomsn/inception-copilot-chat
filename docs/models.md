@@ -2,8 +2,8 @@
 
 The extension discovers the current Inception model catalog live from
 `https://api.inceptionlabs.ai/v1/chat/completions/models`. Each model entry
-carries its own context window, maximum output length, reasoning-effort support,
-and per-model pricing, which are surfaced in the Copilot Chat model picker.
+carries its own context window, maximum output length, and per-model pricing,
+which are surfaced in the Copilot Chat model picker.
 
 A bundled fallback snapshot keeps model selection functional when no API key is
 configured or during transient catalog failures. Live discovery results remain
@@ -22,11 +22,12 @@ The catalog typically exposes the following models:
 
 ## Reasoning efforts
 
-Each model advertises its supported reasoning levels in the live catalog. The
-Copilot Chat model picker lists only the efforts a given model accepts. The
-workspace default (`inceptionCopilot.reasoningEffort`) applies when the model
-supports it; otherwise the model's own default is used. A per-request picker
-selection overrides the workspace default.
+The extension offers a fixed set of reasoning efforts — **Instant**, Low,
+Medium (the default), and High — sent as the `reasoning_effort` request field.
+The live catalog does not advertise per-model effort support, so every model
+gets the same picker. The workspace default
+(`inceptionCopilot.reasoningEffort`) applies unless a per-request picker
+selection overrides it.
 
 ## Context window
 
