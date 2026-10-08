@@ -6,7 +6,6 @@ import {
   resolveAutocompleteSettings,
   resolveNextEditSettings,
 } from "../autocomplete/config";
-import { InceptionAuth } from "../auth/auth";
 import { messageOf } from "../errors";
 import { InceptionProvider } from "../provider";
 import { API_BASE, INCEPTION_ENDPOINTS } from "../transport/protocol";
@@ -23,78 +22,70 @@ export interface StatusMenuDeps {
 }
 
 export function registerCommands(
-  auth: InceptionAuth,
   provider: InceptionProvider,
   output: vscode.OutputChannel,
   deps: StatusMenuDeps,
 ): vscode.Disposable[] {
   return [
-    vscode.commands.registerCommand("inceptionCopilot.manage", () => manage(auth, provider, output, deps)),
-    vscode.commands.registerCommand("inceptionCopilot.configureApiKey", () => configureApiKey(provider, output)),
-    vscode.commands.registerCommand("inceptionCopilot.removeApiKey", () => removeApiKey(provider)),
+    vscode.commands.registerCommand("inceptionCopilot.selectManagementEntry", () => selectEntry(provider, "managementEntry")),
+    vscode.commands.registerCommand("inceptionCopilot.selectAutocompleteEntry", () => selectEntry(provider, "autocompleteEntry")),
+    vscode.commands.registerCommand("inceptionCopilot.selectNextEditEntry", () => selectEntry(provider, "nextEditEntry")),
+    vscode.commands.registerCommand("inceptionCopilot.forgetEntry", () => forgetEntry(provider)),
+    vscode.commands.registerCommand("inceptionCopilot.manage", () => manage(provider, output, deps)),
     vscode.commands.registerCommand("inceptionCopilot.refreshModels", () => refreshModels(provider)),
     vscode.commands.registerCommand("inceptionCopilot.testConnection", () => testConnection(provider, output)),
     vscode.commands.registerCommand("inceptionCopilot.openApiKeys", () => openApiKeys()),
-    vscode.commands.registerCommand("inceptionCopilot.diagnostics", () => diagnostics(auth, output)),
-    vscode.commands.registerCommand("inceptionCopilot.showUsage", () => showUsage(provider, auth, output, deps)),
+    vscode.commands.registerCommand("inceptionCopilot.diagnostics", () => diagnostics(provider, output)),
+    vscode.commands.registerCommand("inceptionCopilot.showUsage", () => showUsage(provider, output, deps)),
     vscode.commands.registerCommand("inceptionCopilot.openUsage", () => openUsageDashboard()),
-    // Back-compat alias: the pre-merge completion status bar entry.
-    vscode.commands.registerCommand("inceptionCopilot.completionMenu", () => showUsage(provider, auth, output, deps)),
   ];
 }
 
 async function manage(
-  auth: InceptionAuth,
   provider: InceptionProvider,
   output: vscode.OutputChannel,
   deps: StatusMenuDeps,
 ): Promise<void> {
-  const configured = await auth.hasApiKey();
-  const choices = configured
-    ? [
-        { label: "$(check) Test Inception inference", action: "test" },
-        { label: "$(graph) Show Inception usage", action: "usage" },
-        { label: "$(refresh) Refresh hosted models", action: "refresh" },
-        { label: "$(key) Replace API key", action: "configure" },
-        { label: "$(link-external) Open Inception usage dashboard", action: "usageDashboard" },
-        { label: "$(link-external) Open Inception API keys", action: "open" },
-        { label: "$(output) Show Inception logs", action: "logs" },
-        { label: "$(info) Show diagnostics", action: "diagnostics" },
-        { label: "$(trash) Remove API key", action: "remove" },
-      ]
-    : [
-        { label: "$(key) Configure Inception API key", action: "configure" },
-        { label: "$(link-external) Open Inception usage dashboard", action: "usageDashboard" },
-        { label: "$(link-external) Open Inception API keys", action: "open" },
-        { label: "$(output) Show Inception logs", action: "logs" },
-      ];
-  const picked = await vscode.window.showQuickPick(choices, {
-    title: `Inception Platform — API key ${configured ? "configured" : "not configured"}`,
-  });
+  const choices = [
+    { label: "$(settings) Manage Language Models", action: "models" },
+    { label: "$(account) Select entry for management", action: "managementEntry" },
+    { label: "$(edit) Select autocomplete entry", action: "autocompleteEntry" },
+    { label: "$(edit) Select next-edit entry", action: "nextEditEntry" },
+    { label: "$(check) Test Inception inference", action: "test" },
+    { label: "$(refresh) Refresh hosted models", action: "refresh" },
+    { label: "$(graph) Show Inception usage", action: "usage" },
+    { label: "$(link-external) Open Inception API keys", action: "open" },
+    { label: "$(output) Show Inception logs", action: "logs" },
+    { label: "$(info) Show diagnostics", action: "diagnostics" },
+    { label: "$(trash) Forget loaded entry", action: "forget" },
+  ];
+  const picked = await vscode.window.showQuickPick(choices, { title: "Inception — native provider entries" });
   if (!picked) return;
-  if (picked.action === "configure") await configureApiKey(provider, output);
+  if (picked.action === "models") await vscode.commands.executeCommand("workbench.action.chat.manage");
+  else if (picked.action === "managementEntry") await selectEntry(provider, "managementEntry");
   else if (picked.action === "refresh") await refreshModels(provider);
   else if (picked.action === "test") await testConnection(provider, output);
-  else if (picked.action === "usage") await showUsage(provider, auth, output, deps);
-  else if (picked.action === "usageDashboard") await openUsageDashboard();
   else if (picked.action === "open") await openApiKeys();
   else if (picked.action === "logs") output.show(true);
-  else if (picked.action === "diagnostics") await diagnostics(auth, output);
-  else if (picked.action === "remove") await removeApiKey(provider);
+  else if (picked.action === "diagnostics") await diagnostics(provider, output);
+  else if (picked.action === "forget") await forgetEntry(provider);
+  else if (picked.action === "autocompleteEntry") await selectEntry(provider, "autocompleteEntry");
+  else if (picked.action === "nextEditEntry") await selectEntry(provider, "nextEditEntry");
+  else if (picked.action === "usage") await showUsage(provider, output, deps);
 }
 
 /**
  * Merged status menu: locally tracked usage rows followed by the inline
  * completion controls (formerly the separate Mercury status bar item) and
- * connection actions. `inceptionCopilot.completionMenu` opens the same menu.
+ * connection actions for the explicitly selected management entry.
  */
 async function showUsage(
   provider: InceptionProvider,
-  auth: InceptionAuth,
   output: vscode.OutputChannel,
   deps: StatusMenuDeps,
 ): Promise<void> {
-  const snapshot = mergeUsageSnapshots(Object.values(provider.getUsageSnapshots()));
+  const selected = provider.getSelectedUsageSnapshot();
+  const snapshot = mergeUsageSnapshots(selected ? [selected] : []);
   const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
   const autocomplete = resolveAutocompleteSettings(configuration);
   const nextEdit = resolveNextEditSettings(configuration);
@@ -120,7 +111,7 @@ async function showUsage(
     { action: "chooseModel", item: { label: "$(zap) Choose Completion Model…", description: autocomplete.model } },
     { action: "openCompletionSettings", item: { label: "$(gear) Open Completion Settings" } },
   ];
-  if (!hasKey) entries.push({ action: "configureApiKey", item: { label: "$(key) Configure API Key…" } });
+  if (!hasKey) entries.push({ action: "selectEntry", item: { label: "$(account) Select completion entry…" } });
   entries.push(
     { item: { label: "", kind: vscode.QuickPickItemKind.Separator } },
     { action: "openDashboard", item: { label: "$(link-external) Open Inception usage dashboard" } },
@@ -140,9 +131,9 @@ async function showUsage(
   else if (action === "chooseModel") await chooseModel(deps, autocomplete.model);
   else if (action === "openCompletionSettings") {
     await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:grikomsn.inception-copilot-chat completion");
-  } else if (action === "configureApiKey") await configureApiKey(provider, output);
+  } else if (action === "selectEntry") await selectEntry(provider, "autocompleteEntry");
   else if (action === "openDashboard") await openUsageDashboard();
-  else if (action === "manage") await manage(auth, provider, output, deps);
+  else if (action === "manage") await manage(provider, output, deps);
 }
 
 function toggleSection(section: string, current: boolean): void {
@@ -173,45 +164,25 @@ async function openUsageDashboard(): Promise<void> {
   if (!opened) vscode.window.showWarningMessage("VS Code could not open Inception Platform.");
 }
 
-async function configureApiKey(
-  provider: InceptionProvider,
-  output: vscode.OutputChannel,
-): Promise<boolean> {
-  const apiKey = await vscode.window.showInputBox({
-    title: "Configure Inception Platform API key",
-    prompt: "The key is validated with Inception, then stored in VS Code Secret Storage.",
-    placeHolder: "Paste your Inception API key",
-    password: true,
-    ignoreFocusOut: true,
-    validateInput: (value) => value.trim() ? undefined : "Enter an Inception API key",
-  });
-  if (!apiKey) return false;
-
-  try {
-    const models = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "Validating Inception API key…" },
-      () => provider.configureApiKey(apiKey),
-    );
-    output.appendLine(`[auth] API key configured; models=${models.join(",")}`);
-    vscode.window.showInformationMessage(`Inception connected. Found ${models.length} hosted models.`);
-    return true;
-  } catch (error) {
-    const message = messageOf(error);
-    output.appendLine(`[auth] API key validation failed: ${message}`);
-    vscode.window.showErrorMessage(`Inception API key was not saved: ${message}`);
-    return false;
+async function selectEntry(provider: InceptionProvider, setting: string): Promise<void> {
+  const entries = provider.getEntries();
+  if (!entries.length) {
+    await vscode.commands.executeCommand("workbench.action.chat.manage");
+    void vscode.window.showInformationMessage("Add an entry with a unique entryId, then open its models to load its credential.");
+    return;
   }
+  const picked = await vscode.window.showQuickPick(entries.map((entry) => ({ label: entry.entryId })), {
+    title: `Inception — select ${setting}`,
+  });
+  if (picked) await vscode.workspace.getConfiguration("inceptionCopilot").update(setting, picked.label, vscode.ConfigurationTarget.Global);
 }
 
-async function removeApiKey(provider: InceptionProvider): Promise<void> {
-  const choice = await vscode.window.showWarningMessage(
-    "Remove the Inception API key from VS Code Secret Storage?",
-    { modal: true },
-    "Remove API Key",
-  );
-  if (choice !== "Remove API Key") return;
-  await provider.clearApiKey();
-  vscode.window.showInformationMessage("Inception API key removed.");
+async function forgetEntry(provider: InceptionProvider): Promise<void> {
+  const picked = await vscode.window.showQuickPick(provider.getEntries().map((entry) => ({ label: entry.entryId })), {
+    title: "Forget loaded entry",
+    placeHolder: "Also delete the entry in Manage Language Models to prevent it loading again",
+  });
+  if (picked) provider.forgetEntry(picked.label);
 }
 
 async function refreshModels(provider: InceptionProvider): Promise<void> {
@@ -231,7 +202,7 @@ async function testConnection(provider: InceptionProvider, output: vscode.Output
     );
     output.appendLine(`[test] model=${result.model} effort=${result.reasoningEffort}`);
     vscode.window.showInformationMessage(
-      `Inception verified with ${result.model} (${result.reasoningEffort} effort): ${result.text}`,
+      `Inception verified with ${result.model} (${result.reasoningEffort} effort).`,
     );
   } catch (error) {
     const message = messageOf(error);
@@ -245,7 +216,7 @@ async function openApiKeys(): Promise<void> {
   if (!opened) vscode.window.showWarningMessage("VS Code could not open Inception Platform.");
 }
 
-async function diagnostics(auth: InceptionAuth, output: vscode.OutputChannel): Promise<void> {
+async function diagnostics(provider: InceptionProvider, output: vscode.OutputChannel): Promise<void> {
   const models = await vscode.lm.selectChatModels({ vendor: "inception" });
   const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
   const autocomplete = resolveAutocompleteSettings(configuration);
@@ -256,7 +227,7 @@ async function diagnostics(auth: InceptionAuth, output: vscode.OutputChannel): P
     `- VS Code: ${vscode.version}`,
     `- API endpoint: ${API_BASE}`,
     `- Completion endpoints: ${INCEPTION_ENDPOINTS.fim}, ${INCEPTION_ENDPOINTS.edit}`,
-    `- API key: ${(await auth.hasApiKey()) ? "configured in Secret Storage" : "missing"}`,
+    `- Loaded native entries: ${provider.getEntries().length}`,
     `- Default reasoning effort: ${configuration.get("reasoningEffort", "medium")}`,
     `- Inline autocomplete: ${featureState(autocomplete)}`,
     `- Next edit suggestions: ${featureState(nextEdit)}`,

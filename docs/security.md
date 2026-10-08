@@ -2,11 +2,11 @@
 
 ## Credential storage
 
-Command-managed Inception API keys are stored in VS Code `SecretStorage`; provider-entry keys are supplied through VS Code's secret provider configuration. They are not written to workspace settings, files, extension logs, or this repository. A key is validated against the hosted model-list endpoint before it is used for model discovery.
+All API keys belong to native entries in **Manage Language Models** and are supplied through VS Code's secret provider configuration. The extension holds provisioned keys in memory only; it does not read or write a command-managed key or mirror secrets into workspace settings, files, logs, or global state.
 
-Use **Inception: Remove API Key** to delete the saved credential. Replacing a key validates the replacement before overwriting the existing secret.
+Every entry requires a unique `entryId` (1–64 lowercase letters, numbers, dots, underscores or hyphens). Use separate IDs for separate native entries, even if they share a display name. Keep the ID when rotating a key so model selections remain stable. Catalogs and request credentials are scoped by a one-way key fingerprint; model handles also carry an entry generation and are rejected after rotation or removal. Entries sharing the same API key share its credential scope.
 
-Provider entries created through **Manage Language Models** receive their API key through VS Code's provider configuration and are kept separate from the legacy command-managed key. A short one-way fingerprint is used in memory only to distinguish entries; the key itself is never used as a model identifier or log value.
+Delete or update credentials through **Manage Language Models**. **Inception: Forget Loaded Entry** immediately revokes the in-memory binding; delete the native entry as well to prevent it loading again on discovery. After a restart, entries become available when VS Code provisions them again. Feature selectors never choose the first available key or another entry. Token snapshots contain counts, model IDs and times, indexed by a one-way credential fingerprint; they contain no key, prompt, or response.
 
 ## Network destination
 

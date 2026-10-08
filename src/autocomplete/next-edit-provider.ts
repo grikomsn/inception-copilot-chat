@@ -203,7 +203,7 @@ export class MercuryNextEditProvider implements vscode.InlineCompletionItemProvi
     if (this.missingKeyLogged) return;
     this.missingKeyLogged = true;
     this.output.appendLine(
-      "[next-edit] no Inception API key configured; run ‘Inception: Configure API Key’ or add a native provider entry",
+      "[next-edit] no selected Inception entry available; use ‘Inception: Select Next Edit Entry’ and load it through Manage Language Models",
     );
   }
 
@@ -211,7 +211,7 @@ export class MercuryNextEditProvider implements vscode.InlineCompletionItemProvi
     if (!this.debugLogging()) return;
     const usage = completion.usage;
     const detail = usage ? `prompt=${usage.promptTokens} output=${usage.completionTokens}` : "usage unavailable";
-    const warning = completion.warning ? ` warning="${completion.warning}"` : "";
+    const warning = completion.warning ? " warning=true" : "";
     this.output.appendLine(`[next-edit] model=${model} ${elapsedMs}ms ${detail}${warning}`);
   }
 

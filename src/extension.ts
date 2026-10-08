@@ -9,9 +9,8 @@ import { MercuryNextEditProvider, NEXT_EDIT_ACCEPTED_COMMAND } from "./autocompl
 import { MercuryAutocompleteProvider, AUTOCOMPLETE_ACCEPTED_COMMAND } from "./autocomplete/provider";
 import { EditHistoryTracker, RecentSnippetsTracker } from "./autocomplete/tracker";
 import { type InlineUsageListener } from "./autocomplete/usage";
-import { InceptionAuth } from "./auth/auth";
+import { NativeEntries } from "./auth/auth";
 import { registerCommands } from "./commands/commands";
-import { messageOf } from "./errors";
 import { InceptionProvider } from "./provider";
 import { EditClient } from "./transport/edit";
 import { FeedbackClient } from "./transport/feedback";
@@ -22,7 +21,7 @@ import { renderUsageStatus, updateUsageStatusVisibility } from "./usage/presenta
 
 const RECENT_SNIPPET_COUNT = 5;
 const PROVIDER_NAME = "inception-copilot-chat";
-const USAGE_STATE_KEY = "inceptionCopilot.usageSnapshots.v1";
+const USAGE_STATE_KEY = "inceptionCopilot.usageSnapshots.v2";
 
 interface SuggestionSource {
   lastSuggestionId(): string | undefined;
@@ -30,14 +29,16 @@ interface SuggestionSource {
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Inception");
-  const auth = new InceptionAuth(context.secrets);
+  const entries = new NativeEntries();
   const userAgent = extensionUserAgent(context.extension.packageJSON.version, vscode.version);
   const storedUsage = context.globalState.get<Record<string, InceptionUsageSnapshot>>(USAGE_STATE_KEY) ?? {};
-  const provider = new InceptionProvider(auth, output, userAgent, storedUsage);
+  const provider = new InceptionProvider(entries, output, userAgent, storedUsage);
   const fim = new FimClient(INCEPTION_ENDPOINTS.fim, userAgent);
   const edit = new EditClient(INCEPTION_ENDPOINTS.edit, INCEPTION_ENDPOINTS.editModels, userAgent);
   const resolveApiKey = async (): Promise<string | undefined> =>
-    (await auth.getApiKey()) ?? provider.firstConfiguredApiKey();
+    provider.getInlineApiKey(vscode.workspace.getConfiguration("inceptionCopilot").get("autocompleteEntry", ""));
+  const resolveNextEditApiKey = async (): Promise<string | undefined> =>
+    provider.getInlineApiKey(vscode.workspace.getConfiguration("inceptionCopilot").get("nextEditEntry", ""));
   const reportInlineUsage: InlineUsageListener = (event) => {
     provider.recordInlineUsage(event.usage ?? {}, event.model, event.apiKey);
   };
@@ -45,7 +46,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const editHistory = new EditHistoryTracker(nextEditConfig.historyDepth);
   const recentSnippets = new RecentSnippetsTracker(nextEditConfig.snippetContextLines, RECENT_SNIPPET_COUNT);
   const autocomplete = new MercuryAutocompleteProvider(resolveApiKey, fim, output, reportInlineUsage);
-  const nextEdit = new MercuryNextEditProvider(resolveApiKey, edit, editHistory, recentSnippets, output, reportInlineUsage);
+  const nextEdit = new MercuryNextEditProvider(resolveNextEditApiKey, edit, editHistory, recentSnippets, output, reportInlineUsage);
   const feedback = new FeedbackClient(FEEDBACK_URL, PROVIDER_NAME, context.extension.packageJSON.version);
   const reportAcceptance = (feature: string, source: SuggestionSource): void => {
     logAcceptance(output, feature);
@@ -56,11 +57,12 @@ export function activate(context: vscode.ExtensionContext): void {
   usageStatus.command = "inceptionCopilot.showUsage";
   const renderUsage = async (): Promise<void> => {
     const configuration = vscode.workspace.getConfiguration("inceptionCopilot");
-    renderUsageStatus(usageStatus, mergeUsageSnapshots(Object.values(provider.getUsageSnapshots())), {
-      hasKey: Boolean(await resolveApiKey()),
+    const selectedUsage = provider.getSelectedUsageSnapshot();
+    renderUsageStatus(usageStatus, mergeUsageSnapshots(selectedUsage ? [selectedUsage] : []), {
+      hasKey: Boolean(provider.getInlineApiKey(configuration.get("managementEntry", ""))),
       featureLines: [
-        `Autocomplete: ${featureState(resolveAutocompleteSettings(configuration))}`,
-        `Next Edit: ${featureState(resolveNextEditSettings(configuration))}`,
+        `Autocomplete: ${featureState(resolveAutocompleteSettings(configuration))} · entry ${configuration.get("autocompleteEntry", "") || "not selected"}`,
+        `Next Edit: ${featureState(resolveNextEditSettings(configuration))} · entry ${configuration.get("nextEditEntry", "") || "not selected"}`,
       ],
     });
     updateUsageStatusVisibility(usageStatus);
@@ -84,6 +86,9 @@ export function activate(context: vscode.ExtensionContext): void {
         || event.affectsConfiguration("inceptionCopilot.catalogCacheMinutes")) {
         provider.fireDidChange();
       }
+      if (event.affectsConfiguration("inceptionCopilot.managementEntry")
+        || event.affectsConfiguration("inceptionCopilot.autocompleteEntry")
+        || event.affectsConfiguration("inceptionCopilot.nextEditEntry")) void renderUsage();
       if (event.affectsConfiguration("inceptionCopilot.showUsageStatusBar")) updateUsageStatusVisibility(usageStatus);
       if (event.affectsConfiguration("inceptionCopilot.autocomplete")
         || event.affectsConfiguration("inceptionCopilot.nextEdit")) {
@@ -99,7 +104,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.languages.registerInlineCompletionItemProvider([{ pattern: "**" }], nextEdit),
     vscode.commands.registerCommand(AUTOCOMPLETE_ACCEPTED_COMMAND, () => reportAcceptance("autocomplete", autocomplete)),
     vscode.commands.registerCommand(NEXT_EDIT_ACCEPTED_COMMAND, () => reportAcceptance("next edit", nextEdit)),
-    ...registerCommands(auth, provider, output, {
+    ...registerCommands(provider, output, {
       resolveApiKey,
       listModels: async () => edit.listModels((await resolveApiKey()) ?? "", [AUTOCOMPLETE_DEFAULTS.model]),
     }),
@@ -108,12 +113,6 @@ export function activate(context: vscode.ExtensionContext): void {
   output.appendLine(
     `[activate] Inception for Copilot Chat ${context.extension.packageJSON.version} on VS Code ${vscode.version}`,
   );
-  void auth.hasApiKey().then((configured) => {
-    if (!configured) return;
-    void provider.refreshModels().catch((error) => {
-      output.appendLine(`[models] initial refresh failed: ${messageOf(error)}`);
-    });
-  });
 }
 
 function logAcceptance(output: vscode.OutputChannel, feature: string): void {

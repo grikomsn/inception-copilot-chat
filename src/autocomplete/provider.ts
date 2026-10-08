@@ -139,7 +139,7 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
     if (this.missingKeyLogged) return;
     this.missingKeyLogged = true;
     this.output.appendLine(
-      "[autocomplete] no Inception API key configured; run ‘Inception: Configure API Key’ or add a native provider entry",
+      "[autocomplete] no selected Inception entry available; use ‘Inception: Select Autocomplete Entry’ and load it through Manage Language Models",
     );
   }
 
@@ -147,7 +147,7 @@ export class MercuryAutocompleteProvider implements vscode.InlineCompletionItemP
     if (!this.debugLogging()) return;
     const usage = completion.usage;
     const detail = usage ? `prompt=${usage.promptTokens} output=${usage.completionTokens}` : "usage unavailable";
-    const warning = completion.warning ? ` warning="${completion.warning}"` : "";
+    const warning = completion.warning ? " warning=true" : "";
     this.output.appendLine(`[autocomplete] model=${model} ${elapsedMs}ms ${detail}${warning}`);
   }
 
