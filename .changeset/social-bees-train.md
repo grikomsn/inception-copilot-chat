@@ -7,3 +7,5 @@ Require native VS Code provider entries with a unique `entryId` and VS Code-owne
 Keep streamed reasoning before visible output, close thinking at text/tool/completion boundaries and during cleanup, and use request-scoped IDs for tools missing upstream IDs. Preserve fragmented parallel tool arguments across index/ID aliases and split CRLF chunks, reject incomplete/truncated streams, and release response readers on completion, errors and cancellation.
 
 Bind FIM and next-edit credentials independently, attribute their usage to the actual credential, and show usage for the selected management entry. Local usage starts fresh in the new credential scopes.
+
+Persist only forgotten entry IDs to prevent discovery or restart from reviving revoked credentials; restore entries explicitly before fresh VS Code provisioning.

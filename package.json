@@ -89,6 +89,10 @@
       {
         "command": "inceptionCopilot.forgetEntry",
         "title": "Inception: Forget Loaded Entry"
+      },
+      {
+        "command": "inceptionCopilot.restoreEntry",
+        "title": "Inception: Restore Forgotten Entry"
       }
     ],
     "menus": {

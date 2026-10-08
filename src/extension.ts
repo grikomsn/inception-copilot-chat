@@ -29,7 +29,7 @@ interface SuggestionSource {
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Inception");
-  const entries = new NativeEntries();
+  const entries = new NativeEntries(context.globalState);
   const userAgent = extensionUserAgent(context.extension.packageJSON.version, vscode.version);
   const storedUsage = context.globalState.get<Record<string, InceptionUsageSnapshot>>(USAGE_STATE_KEY) ?? {};
   const provider = new InceptionProvider(entries, output, userAgent, storedUsage);

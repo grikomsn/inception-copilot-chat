@@ -18,7 +18,7 @@ test("native entries require an explicit stable ID and a VS Code-owned secret", 
 });
 test("uses explicit entry selection and removes command-managed credential workflows", () => {
   const commands = manifest.contributes.commands.map((item) => item.command);
-  for (const command of ["manage", "testConnection", "selectManagementEntry", "forgetEntry"]) assert.ok(commands.includes(`inceptionCopilot.${command}`));
+  for (const command of ["manage", "testConnection", "selectManagementEntry", "forgetEntry", "restoreEntry"]) assert.ok(commands.includes(`inceptionCopilot.${command}`));
   for (const command of ["configureApiKey", "removeApiKey", "completionMenu"]) assert.ok(!commands.includes(`inceptionCopilot.${command}`));
   for (const setting of ["managementEntry", "autocompleteEntry", "nextEditEntry"]) assert.equal(manifest.contributes.configuration.properties[`inceptionCopilot.${setting}`]?.default, "");
 });

@@ -31,6 +31,7 @@ export function registerCommands(
     vscode.commands.registerCommand("inceptionCopilot.selectAutocompleteEntry", () => selectEntry(provider, "autocompleteEntry")),
     vscode.commands.registerCommand("inceptionCopilot.selectNextEditEntry", () => selectEntry(provider, "nextEditEntry")),
     vscode.commands.registerCommand("inceptionCopilot.forgetEntry", () => forgetEntry(provider)),
+    vscode.commands.registerCommand("inceptionCopilot.restoreEntry", () => restoreEntry(provider)),
     vscode.commands.registerCommand("inceptionCopilot.manage", () => manage(provider, output, deps)),
     vscode.commands.registerCommand("inceptionCopilot.refreshModels", () => refreshModels(provider)),
     vscode.commands.registerCommand("inceptionCopilot.testConnection", () => testConnection(provider, output)),
@@ -58,6 +59,7 @@ async function manage(
     { label: "$(output) Show Inception logs", action: "logs" },
     { label: "$(info) Show diagnostics", action: "diagnostics" },
     { label: "$(trash) Forget loaded entry", action: "forget" },
+    { label: "$(history) Restore forgotten entry", action: "restore" },
   ];
   const picked = await vscode.window.showQuickPick(choices, { title: "Inception — native provider entries" });
   if (!picked) return;
@@ -69,6 +71,7 @@ async function manage(
   else if (picked.action === "logs") output.show(true);
   else if (picked.action === "diagnostics") await diagnostics(provider, output);
   else if (picked.action === "forget") await forgetEntry(provider);
+  else if (picked.action === "restore") await restoreEntry(provider);
   else if (picked.action === "autocompleteEntry") await selectEntry(provider, "autocompleteEntry");
   else if (picked.action === "nextEditEntry") await selectEntry(provider, "nextEditEntry");
   else if (picked.action === "usage") await showUsage(provider, output, deps);
@@ -180,9 +183,17 @@ async function selectEntry(provider: InceptionProvider, setting: string): Promis
 async function forgetEntry(provider: InceptionProvider): Promise<void> {
   const picked = await vscode.window.showQuickPick(provider.getEntries().map((entry) => ({ label: entry.entryId })), {
     title: "Forget loaded entry",
-    placeHolder: "Also delete the entry in Manage Language Models to prevent it loading again",
+    placeHolder: "Block this entry until you explicitly restore it, including after restarting VS Code",
   });
-  if (picked) provider.forgetEntry(picked.label);
+  if (picked) await provider.forgetEntry(picked.label);
+}
+
+async function restoreEntry(provider: InceptionProvider): Promise<void> {
+  const picked = await vscode.window.showQuickPick(provider.getForgottenEntries().map((entryId) => ({ label: entryId })), {
+    title: "Restore forgotten entry",
+    placeHolder: "Allow VS Code to provision the entry again from Manage Language Models",
+  });
+  if (picked) await provider.restoreEntry(picked.label);
 }
 
 async function refreshModels(provider: InceptionProvider): Promise<void> {
