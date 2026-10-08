@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { InceptionAuth } from "./auth/auth";
+import { NativeEntries, credentialReference } from "./auth/auth";
 import { messageOf } from "./errors";
 import {
   FALLBACK_MODEL_METADATA,
@@ -20,9 +20,9 @@ import {
   resolveReasoningEffort,
   type ReasoningEffort,
 } from "./models/options";
-import { ChatCompletionStreamParser, validateStreamCompletion, type ChatStreamEvent } from "./transport/sse";
+import { ChatCompletionStreamParser, validateStreamCompletion } from "./transport/sse";
 import { INCEPTION_ENDPOINTS, inceptionHeaders } from "./transport/protocol";
-import { reportEvent } from "./provider/response";
+import { apiError, StreamResponseReporter } from "./provider/response";
 import { buildRequest } from "./provider/request";
 import { messageToText } from "./provider/messages";
 import { modelPricingFields } from "./models/pricing";
@@ -33,13 +33,15 @@ import {
   type InceptionUsageSnapshot,
   type ProviderUsagePayload,
 } from "./usage/domain";
-import { apiKeyFromConfiguration, credentialRefForApiKey, qualifiedModelId } from "./provider-profile";
+import { qualifiedModelId } from "./provider-profile";
 
 export { API_BASE } from "./transport/protocol";
 
 export interface InceptionModel extends vscode.LanguageModelChatInformation {
   rawModelId: string;
   credentialRef: string;
+  entryId: string;
+  generation: number;
 }
 
 export class InceptionProvider implements vscode.LanguageModelChatProvider<InceptionModel> {
@@ -50,7 +52,6 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
   readonly onDidChangeUsage = this.usageEmitter.event;
   private readonly catalogs = new Map<string, InceptionModelMetadata[]>();
   private readonly refreshedAt = new Map<string, number>();
-  private readonly apiKeys = new Map<string, string>();
   private readonly usage = new Map<string, InceptionUsageSnapshot>();
 
   private get configuration(): vscode.WorkspaceConfiguration {
@@ -62,7 +63,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
   }
 
   constructor(
-    private readonly auth: InceptionAuth,
+    private readonly entries: NativeEntries,
     private readonly output: vscode.OutputChannel,
     private readonly userAgent: string,
     initialUsage: Record<string, InceptionUsageSnapshot> = {},
@@ -77,21 +78,43 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     this.changeEmitter.fire();
   }
 
-  async configureApiKey(apiKey: string): Promise<string[]> {
-    const models = await this.fetchModels(apiKey.trim());
-    await this.auth.storeApiKey(apiKey);
-    this.setCatalog("legacy", models);
-    this.changeEmitter.fire();
-    return models.map(({ id }) => id);
+  getEntries(): Array<{ entryId: string; credentialRef: string }> { return this.entries.list(); }
+
+  getInlineApiKey(entryId: string): string | undefined {
+    if (!entryId) return undefined;
+    try { return this.entries.keyForEntry(entryId); } catch { return undefined; }
   }
 
-  async clearApiKey(): Promise<void> {
-    await this.auth.clearApiKey();
-    this.apiKeys.delete("legacy");
-    this.setCatalog("legacy", [...FALLBACK_MODEL_METADATA]);
-    this.refreshedAt.delete("legacy");
-    this.clearUsage("legacy");
+  async forgetEntry(entryId: string): Promise<void> {
+    await this.entries.forget(entryId);
+    this.pruneCatalogs();
     this.changeEmitter.fire();
+  }
+
+  getForgottenEntries(): string[] { return this.entries.listForgotten(); }
+
+  async restoreEntry(entryId: string): Promise<void> {
+    await this.entries.restore(entryId);
+    this.changeEmitter.fire();
+  }
+
+  private pruneCatalogs(): void {
+    for (const reference of this.catalogs.keys()) {
+      if (this.entries.keyForCredential(reference)) continue;
+      this.catalogs.delete(reference);
+      this.refreshedAt.delete(reference);
+    }
+  }
+
+  private selectedEntryId(): string {
+    return this.configuration.get("managementEntry", "");
+  }
+
+  async refreshModels(): Promise<string[]> {
+    const apiKey = this.requireEntryKey(this.selectedEntryId());
+    const models = await this.refreshCatalog(credentialReference(apiKey), apiKey);
+    this.changeEmitter.fire();
+    return models.map(({ id }) => id);
   }
 
   getUsageSnapshot(credentialRef: string): InceptionUsageSnapshot | undefined {
@@ -110,7 +133,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
   /**
    * Records usage from the inline-completion providers (FIM/next edit). The
    * resolved API key identifies the credential so inline usage joins the same
-   * snapshot as chat usage; unmatched keys fall back to the legacy scope.
+   * snapshot as chat usage; unavailable credentials are never attributed to another entry.
    */
   recordInlineUsage(
     usage: { promptTokens?: number; completionTokens?: number; cachedTokens?: number; reasoningTokens?: number },
@@ -123,16 +146,18 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       prompt_tokens_details: usage.cachedTokens === undefined ? undefined : { cached_tokens: usage.cachedTokens },
       completion_tokens_details: usage.reasoningTokens === undefined ? undefined : { reasoning_tokens: usage.reasoningTokens },
     });
-    this.setUsage(this.credentialRefForApiKey(apiKey), payload, modelId);
+    if (apiKey) this.setUsage(credentialReference(apiKey), payload, modelId);
   }
 
-  private credentialRefForApiKey(apiKey: string | undefined): string {
-    if (apiKey !== undefined) {
-      for (const [credentialRef, stored] of this.apiKeys) {
-        if (stored === apiKey) return credentialRef;
-      }
-    }
-    return "legacy";
+  getSelectedUsageSnapshot(): InceptionUsageSnapshot | undefined {
+    const key = this.getInlineApiKey(this.selectedEntryId());
+    return key ? this.usage.get(credentialReference(key)) : undefined;
+  }
+
+  private reportUsageForModel(usage: Record<string, unknown>, model: InceptionModel): void {
+    const payload = toProviderUsagePayload(usage);
+    this.setUsage(model.credentialRef, payload, model.rawModelId);
+    if (this.debugLogging) this.output.appendLine(`[usage] ${JSON.stringify(payload)}`);
   }
 
   private setUsage(credentialRef: string, usage: ProviderUsagePayload, modelId: string): void {
@@ -154,44 +179,14 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     this.usageEmitter.fire(credentialRef);
   }
 
-  private reportStreamEvent(
-    event: ChatStreamEvent,
-    model: InceptionModel,
-    progress: vscode.Progress<vscode.LanguageModelResponsePart2>,
-  ): void {
-    if (event.usage) this.setUsage(model.credentialRef, toProviderUsagePayload(event.usage), model.rawModelId);
-    reportEvent(event, progress, this.output, this.debugLogging);
-  }
-
-  async refreshModels(): Promise<string[]> {
-    const apiKey = await this.requireApiKey(false, "legacy");
-    const models = await this.refreshCatalog("legacy", apiKey);
-    this.changeEmitter.fire();
-    return models.map(({ id }) => id);
-  }
-
-  /**
-   * Any API key captured from a native provider entry during model discovery.
-   * Used as a fallback when the command-managed key is absent.
-   */
-  firstConfiguredApiKey(): string | undefined {
-    return this.apiKeys.values().next().value ?? undefined;
-  }
-
   async provideLanguageModelChatInformation(
     options: vscode.PrepareLanguageModelChatModelOptions,
     token: vscode.CancellationToken,
   ): Promise<InceptionModel[]> {
-    const legacyApiKey = await this.auth.getApiKey();
-    const configuredApiKey = options.configuration
-      ? apiKeyFromConfiguration(options.configuration)
-      : undefined;
-    if (token.isCancellationRequested || (options.configuration && !configuredApiKey)) return [];
-    const apiKey = configuredApiKey ?? legacyApiKey;
-    const credentialRef = configuredApiKey
-      ? credentialRefForApiKey(configuredApiKey, legacyApiKey)
-      : "legacy";
-    if (apiKey) this.apiKeys.set(credentialRef, apiKey);
+    if (token.isCancellationRequested || !options.configuration) return [];
+    const { entryId, credentialRef, generation } = this.entries.register(options.configuration);
+    const apiKey = this.requireEntryKey(entryId);
+    this.pruneCatalogs();
     const maxAge = Math.max(1, this.configuration.get("catalogCacheMinutes", 5)) * 60_000;
     if (apiKey && Date.now() - (this.refreshedAt.get(credentialRef) ?? 0) > maxAge) {
       try {
@@ -203,6 +198,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       }
     }
 
+    if (token.isCancellationRequested || !this.entries.matches(entryId, credentialRef, generation)) return [];
     const defaultEffort = resolveReasoningEffort(
       undefined,
       this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
@@ -217,24 +213,21 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       ];
       if (pricing) tooltipParts.push(pricing.pricing);
       return {
-        id: qualifiedModelId(credentialRef, metadata.id),
+        id: qualifiedModelId(entryId, metadata.id),
         rawModelId: metadata.id,
         credentialRef,
+        entryId,
+        generation,
         name: formatModelName(metadata.id),
         family: "inception-mercury",
         version: metadata.version,
-        detail: credentialRef === "legacy"
-          ? (apiKey ? "Inception Platform" : "Inception API key required")
-          : `Inception Platform · ${credentialRef.slice(0, 8)}`,
+        detail: `Inception Platform · ${entryId}`,
         tooltip: tooltipParts.join(" · "),
         maxInputTokens: Math.max(1, metadata.contextLength - metadata.maxOutputTokens),
         maxOutputTokens: metadata.maxOutputTokens,
         isUserSelectable: true,
         ...(pricing === undefined ? {} : pricing),
-        ...(credentialRef !== "legacy" ? { isBYOK: true } : {}),
-        ...(credentialRef === "legacy" && !apiKey
-          ? { requiresAuthorization: { label: "Configure Inception API key" } }
-          : {}),
+        isBYOK: true,
         configurationSchema: buildModelConfigurationSchema(defaultEffort, contextSizeOptions(Math.max(1, metadata.contextLength - metadata.maxOutputTokens))),
         capabilities: {
           imageInput: false,
@@ -252,13 +245,20 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     token: vscode.CancellationToken,
   ): Promise<void> {
     if (token.isCancellationRequested) return;
-    const apiKey = await this.requireApiKey(false, model.credentialRef);
+    if (!this.entries.matches(model.entryId, model.credentialRef, model.generation)) {
+      throw new Error("This provider entry was replaced or removed. Select its current model in Manage Language Models.");
+    }
+    const apiKey = this.requireEntryKey(model.entryId);
     const reasoningEffort = resolveReasoningEffort(
       options.modelConfiguration,
       this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
     );
     const requestBody = buildRequest(model.rawModelId, messages, options, reasoningEffort, model.maxOutputTokens, this.configuration.get("maxOutputTokens", 16384), resolveContextCap(resolveContextSize(options.modelConfiguration), model.maxInputTokens));
+    const reporter = new StreamResponseReporter(progress, vscode, (usage) => this.reportUsageForModel(usage, model));
     const controller = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const abortBody = (): void => { void reader?.cancel().catch(() => {}); };
+    controller.signal.addEventListener("abort", abortBody);
     const cancellation = token.onCancellationRequested(() => controller.abort());
     const timeoutSeconds = Math.max(10, this.configuration.get("requestTimeoutSeconds", 600));
     const idleTimeoutSeconds = Math.max(10, this.configuration.get("streamIdleTimeoutSeconds", 120));
@@ -293,8 +293,9 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       if (!response.body) throw new Error("Inception returned an empty response stream");
 
       const parser = new ChatCompletionStreamParser();
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let complete = false;
       while (true) {
         if (token.isCancellationRequested) {
           await reader.cancel();
@@ -304,10 +305,18 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
         if (result.done) break;
         resetIdleTimeout();
         for (const event of parser.push(decoder.decode(result.value, { stream: true }))) {
-          this.reportStreamEvent(event, model, progress);
+          reporter.report(event);
+          if (event.done) complete = true;
+        }
+        if (complete) {
+          await reader.cancel();
+          break;
         }
       }
-      for (const event of parser.finish()) this.reportStreamEvent(event, model, progress);
+      for (const event of parser.push(decoder.decode())) reporter.report(event);
+      for (const event of parser.finish()) reporter.report(event);
+      if (token.isCancellationRequested) return;
+      if (timedOut) throw new Error("Request timed out");
       validateStreamCompletion(parser.finishReason);
     } catch (error) {
       if (token.isCancellationRequested) return;
@@ -315,6 +324,10 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       if (timedOut === "total") throw new Error(`Inception request for ${model.rawModelId} exceeded ${timeoutSeconds} seconds`);
       throw error;
     } finally {
+      reporter.finish();
+      controller.signal.removeEventListener("abort", abortBody);
+      await reader?.cancel().catch(() => {});
+      reader?.releaseLock();
       clearTimeout(totalTimeout);
       if (idleTimeout) clearTimeout(idleTimeout);
       cancellation.dispose();
@@ -331,8 +344,8 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
   }
 
   async testConnection(): Promise<{ model: string; reasoningEffort: ReasoningEffort; text: string }> {
-    const credentialRef = "legacy";
-    const apiKey = await this.requireApiKey(false, credentialRef);
+    const apiKey = this.requireEntryKey(this.selectedEntryId());
+    const credentialRef = credentialReference(apiKey);
     const models = this.catalogFor(credentialRef);
     const preferred = FALLBACK_MODELS[0];
     const model = models.some(({ id }) => id === preferred)
@@ -380,18 +393,10 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     return models;
   }
 
-  private async requireApiKey(prompt: boolean, credentialRef: string): Promise<string> {
-    let apiKey = credentialRef === "legacy" ? await this.auth.getApiKey() : this.apiKeys.get(credentialRef);
-    if (!apiKey && prompt && credentialRef === "legacy") {
-      await vscode.commands.executeCommand("inceptionCopilot.configureApiKey");
-      apiKey = await this.auth.getApiKey();
-    }
-    if (!apiKey) {
-      throw new Error(credentialRef === "legacy"
-        ? "Inception API key is not configured. Run ‘Inception: Configure API Key’."
-        : "The API key for this Inception provider entry is unavailable. Update the entry in Manage Language Models.");
-    }
-    return apiKey;
+  private requireEntryKey(entryId: string): string {
+    const key = this.getInlineApiKey(entryId);
+    if (!key) throw new Error("Select an available Inception entry in Manage Connection, or provision it in Manage Language Models.");
+    return key;
   }
 
   private catalogFor(credentialRef: string): InceptionModelMetadata[] {
@@ -424,10 +429,4 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
   }
 
 
-}
-
-async function apiError(prefix: string, response: Response): Promise<Error> {
-  // Upstream error bodies can echo prompts or credentials. Keep diagnostics safe.
-  await response.body?.cancel();
-  return new Error(`${prefix} (HTTP ${response.status})`);
 }

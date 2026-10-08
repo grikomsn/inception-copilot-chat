@@ -43,14 +43,6 @@
         "title": "Inception: Manage Connection"
       },
       {
-        "command": "inceptionCopilot.configureApiKey",
-        "title": "Inception: Configure API Key"
-      },
-      {
-        "command": "inceptionCopilot.removeApiKey",
-        "title": "Inception: Remove API Key"
-      },
-      {
         "command": "inceptionCopilot.refreshModels",
         "title": "Inception: Refresh Models"
       },
@@ -75,16 +67,32 @@
         "title": "Inception: Open Usage Dashboard"
       },
       {
-        "command": "inceptionCopilot.completionMenu",
-        "title": "Inception: Completion Settings"
-      },
-      {
         "command": "inceptionCopilot.autocomplete.accepted",
         "title": "Inception: Log Autocomplete Acceptance"
       },
       {
         "command": "inceptionCopilot.nextEdit.accepted",
         "title": "Inception: Log Next Edit Acceptance"
+      },
+      {
+        "command": "inceptionCopilot.selectManagementEntry",
+        "title": "Inception: Select Management Entry"
+      },
+      {
+        "command": "inceptionCopilot.selectAutocompleteEntry",
+        "title": "Inception: Select Autocomplete Entry"
+      },
+      {
+        "command": "inceptionCopilot.selectNextEditEntry",
+        "title": "Inception: Select Next Edit Entry"
+      },
+      {
+        "command": "inceptionCopilot.forgetEntry",
+        "title": "Inception: Forget Loaded Entry"
+      },
+      {
+        "command": "inceptionCopilot.restoreEntry",
+        "title": "Inception: Restore Forgotten Entry"
       }
     ],
     "menus": {
@@ -285,6 +293,24 @@
               "description": "Maximum duration of a next-edit request in milliseconds."
             }
           }
+        },
+        "inceptionCopilot.managementEntry": {
+          "type": "string",
+          "default": "",
+          "pattern": "^$|^[a-z0-9][a-z0-9._-]{0,63}$",
+          "description": "Explicit native entryId used for managementEntry. Provision the entry through Manage Language Models. An empty or unavailable selection sends no feature request."
+        },
+        "inceptionCopilot.autocompleteEntry": {
+          "type": "string",
+          "default": "",
+          "pattern": "^$|^[a-z0-9][a-z0-9._-]{0,63}$",
+          "description": "Explicit native entryId used for autocompleteEntry. Provision the entry through Manage Language Models. An empty or unavailable selection sends no feature request."
+        },
+        "inceptionCopilot.nextEditEntry": {
+          "type": "string",
+          "default": "",
+          "pattern": "^$|^[a-z0-9][a-z0-9._-]{0,63}$",
+          "description": "Explicit native entryId used for nextEditEntry. Provision the entry through Manage Language Models. An empty or unavailable selection sends no feature request."
         }
       }
     },
@@ -295,9 +321,16 @@
         "configuration": {
           "type": "object",
           "required": [
+            "entryId",
             "apiKey"
           ],
           "properties": {
+            "entryId": {
+              "type": "string",
+              "title": "Unique entry ID",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+              "description": "Unique stable entry ID, such as work or personal. Keep it when rotating the API key; use a different ID for each entry."
+            },
             "apiKey": {
               "type": "string",
               "title": "Inception API Key",

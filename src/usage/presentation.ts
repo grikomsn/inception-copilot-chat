@@ -16,7 +16,7 @@ export type UsageMenuAction =
   | "toggleNextEdit"
   | "chooseModel"
   | "openCompletionSettings"
-  | "configureApiKey";
+  | "selectEntry";
 
 export interface UsageQuickPickItem extends vscode.QuickPickItem {
   readonly action?: UsageMenuAction;
@@ -24,7 +24,7 @@ export interface UsageQuickPickItem extends vscode.QuickPickItem {
 
 /** Extra context rendered into the merged status bar item. */
 export interface UsageStatusContext {
-  /** Whether any Inception API key (command-managed or provider entry) is available. */
+  /** Whether an explicitly selected completion entry is available. */
   readonly hasKey: boolean;
   /** Completion feature lines appended to the tooltip, e.g. `Autocomplete: on (mercury-edit-2)`. */
   readonly featureLines: readonly string[];
