@@ -8,7 +8,7 @@ npm test
 npm run package
 ```
 
-Tests are colocated with the modules they cover under `src/auth/`, `src/autocomplete/`, `src/models/`, `src/transport/`, and `src/usage/`. `npm test` performs a clean compile and runs native-entry lifecycle and response-ordering, provider-configuration, model-filtering, stream-parser, protocol, FIM/edit clients, autocomplete context and postprocessing, next-edit prompt and region mapping, diff hunks, debounce, and usage tests. `npm run package` validates the project and creates an installable VSIX.
+Tests are colocated with the modules they cover under `src/auth/`, `src/autocomplete/`, `src/models/`, `src/transport/`, and `src/usage/`. `npm test` performs a clean compile and runs credential provisioning and response-ordering, provider-configuration, model-filtering, stream-parser, protocol, FIM/edit clients, autocomplete context and postprocessing, next-edit prompt and region mapping, diff hunks, debounce, and usage tests. `npm run package` validates the project and creates an installable VSIX.
 
 Install the local build with:
 
@@ -36,4 +36,4 @@ The packaged extension contains compiled runtime files, Marketplace metadata, th
 
 ## Native host regression fixture
 
-`test/native/index.js` exports `run()` for an Extension Development Host. It uses real VS Code response constructors with synthetic native-entry configurations and injected HTTP responses. It checks parallel fragmented tool calls, reasoning closure, follow-up results, separate credentials, explicit selectors, rotation/removal, forgotten-entry rediscovery, restart and explicit restoration, EOF/error rejection, cancellation and reader cleanup. It never reads a real account or writes captured conversations. Paid upstream inference requires a separate live run.
+`test/native/index.js` exports `run()` for an Extension Development Host. It uses real VS Code response constructors with synthetic API-key configurations and injected HTTP responses. It checks parallel fragmented tool calls, reasoning closure, follow-up results, separate credentials, active-key routing, inline-feature usage attribution, rotation, stale-handle rejection, EOF/error rejection, cancellation and reader cleanup. It never reads a real account or writes captured conversations. Paid upstream inference requires a separate live run.

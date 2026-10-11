@@ -27,11 +27,6 @@ export function registerCommands(
   deps: StatusMenuDeps,
 ): vscode.Disposable[] {
   return [
-    vscode.commands.registerCommand("inceptionCopilot.selectManagementEntry", () => selectEntry(provider, "managementEntry")),
-    vscode.commands.registerCommand("inceptionCopilot.selectAutocompleteEntry", () => selectEntry(provider, "autocompleteEntry")),
-    vscode.commands.registerCommand("inceptionCopilot.selectNextEditEntry", () => selectEntry(provider, "nextEditEntry")),
-    vscode.commands.registerCommand("inceptionCopilot.forgetEntry", () => forgetEntry(provider)),
-    vscode.commands.registerCommand("inceptionCopilot.restoreEntry", () => restoreEntry(provider)),
     vscode.commands.registerCommand("inceptionCopilot.manage", () => manage(provider, output, deps)),
     vscode.commands.registerCommand("inceptionCopilot.refreshModels", () => refreshModels(provider)),
     vscode.commands.registerCommand("inceptionCopilot.testConnection", () => testConnection(provider, output)),
@@ -49,31 +44,21 @@ async function manage(
 ): Promise<void> {
   const choices = [
     { label: "$(settings) Manage Language Models", action: "models" },
-    { label: "$(account) Select entry for management", action: "managementEntry" },
-    { label: "$(edit) Select autocomplete entry", action: "autocompleteEntry" },
-    { label: "$(edit) Select next-edit entry", action: "nextEditEntry" },
     { label: "$(check) Test Inception inference", action: "test" },
     { label: "$(refresh) Refresh hosted models", action: "refresh" },
     { label: "$(graph) Show Inception usage", action: "usage" },
     { label: "$(link-external) Open Inception API keys", action: "open" },
     { label: "$(output) Show Inception logs", action: "logs" },
     { label: "$(info) Show diagnostics", action: "diagnostics" },
-    { label: "$(trash) Forget loaded entry", action: "forget" },
-    { label: "$(history) Restore forgotten entry", action: "restore" },
   ];
-  const picked = await vscode.window.showQuickPick(choices, { title: "Inception — native provider entries" });
+  const picked = await vscode.window.showQuickPick(choices, { title: "Inception — provider connection" });
   if (!picked) return;
   if (picked.action === "models") await vscode.commands.executeCommand("workbench.action.chat.manage");
-  else if (picked.action === "managementEntry") await selectEntry(provider, "managementEntry");
   else if (picked.action === "refresh") await refreshModels(provider);
   else if (picked.action === "test") await testConnection(provider, output);
   else if (picked.action === "open") await openApiKeys();
   else if (picked.action === "logs") output.show(true);
   else if (picked.action === "diagnostics") await diagnostics(provider, output);
-  else if (picked.action === "forget") await forgetEntry(provider);
-  else if (picked.action === "restore") await restoreEntry(provider);
-  else if (picked.action === "autocompleteEntry") await selectEntry(provider, "autocompleteEntry");
-  else if (picked.action === "nextEditEntry") await selectEntry(provider, "nextEditEntry");
   else if (picked.action === "usage") await showUsage(provider, output, deps);
 }
 
@@ -114,7 +99,7 @@ async function showUsage(
     { action: "chooseModel", item: { label: "$(zap) Choose Completion Model…", description: autocomplete.model } },
     { action: "openCompletionSettings", item: { label: "$(gear) Open Completion Settings" } },
   ];
-  if (!hasKey) entries.push({ action: "selectEntry", item: { label: "$(account) Select completion entry…" } });
+  if (!hasKey) entries.push({ action: "provisionEntry", item: { label: "$(key) Provision an entry in Manage Language Models…" } });
   entries.push(
     { item: { label: "", kind: vscode.QuickPickItemKind.Separator } },
     { action: "openDashboard", item: { label: "$(link-external) Open Inception usage dashboard" } },
@@ -134,8 +119,7 @@ async function showUsage(
   else if (action === "chooseModel") await chooseModel(deps, autocomplete.model);
   else if (action === "openCompletionSettings") {
     await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:grikomsn.inception-copilot-chat completion");
-  } else if (action === "selectEntry") await selectEntry(provider, "autocompleteEntry");
-  else if (action === "openDashboard") await openUsageDashboard();
+  } else if (action === "openDashboard") await openUsageDashboard();
   else if (action === "manage") await manage(provider, output, deps);
 }
 
@@ -165,35 +149,6 @@ async function chooseModel(deps: StatusMenuDeps, current: string): Promise<void>
 async function openUsageDashboard(): Promise<void> {
   const opened = await vscode.env.openExternal(vscode.Uri.parse(USAGE_DASHBOARD_URL));
   if (!opened) vscode.window.showWarningMessage("VS Code could not open Inception Platform.");
-}
-
-async function selectEntry(provider: InceptionProvider, setting: string): Promise<void> {
-  const entries = provider.getEntries();
-  if (!entries.length) {
-    await vscode.commands.executeCommand("workbench.action.chat.manage");
-    void vscode.window.showInformationMessage("Add an entry with a unique entryId, then open its models to load its credential.");
-    return;
-  }
-  const picked = await vscode.window.showQuickPick(entries.map((entry) => ({ label: entry.entryId })), {
-    title: `Inception — select ${setting}`,
-  });
-  if (picked) await vscode.workspace.getConfiguration("inceptionCopilot").update(setting, picked.label, vscode.ConfigurationTarget.Global);
-}
-
-async function forgetEntry(provider: InceptionProvider): Promise<void> {
-  const picked = await vscode.window.showQuickPick(provider.getEntries().map((entry) => ({ label: entry.entryId })), {
-    title: "Forget loaded entry",
-    placeHolder: "Block this entry until you explicitly restore it, including after restarting VS Code",
-  });
-  if (picked) await provider.forgetEntry(picked.label);
-}
-
-async function restoreEntry(provider: InceptionProvider): Promise<void> {
-  const picked = await vscode.window.showQuickPick(provider.getForgottenEntries().map((entryId) => ({ label: entryId })), {
-    title: "Restore forgotten entry",
-    placeHolder: "Allow VS Code to provision the entry again from Manage Language Models",
-  });
-  if (picked) await provider.restoreEntry(picked.label);
 }
 
 async function refreshModels(provider: InceptionProvider): Promise<void> {
@@ -238,7 +193,6 @@ async function diagnostics(provider: InceptionProvider, output: vscode.OutputCha
     `- VS Code: ${vscode.version}`,
     `- API endpoint: ${API_BASE}`,
     `- Completion endpoints: ${INCEPTION_ENDPOINTS.fim}, ${INCEPTION_ENDPOINTS.edit}`,
-    `- Loaded native entries: ${provider.getEntries().length}`,
     `- Default reasoning effort: ${configuration.get("reasoningEffort", "medium")}`,
     `- Inline autocomplete: ${featureState(autocomplete)}`,
     `- Next edit suggestions: ${featureState(nextEdit)}`,
