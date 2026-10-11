@@ -9,16 +9,26 @@ const manifest = JSON.parse(readFileSync("package.json", "utf8")) as {
     configuration: { properties: Record<string, { default?: unknown }> };
   };
 };
-test("native entries require an explicit stable ID and a VS Code-owned secret", () => {
+test("native entries are VS Code-owned API keys without entry IDs", () => {
   const provider = manifest.contributes.languageModelChatProviders.find((item) => item.vendor === "inception");
   assert.ok(provider);
   assert.equal(provider.managementCommand, undefined);
-  assert.deepEqual(provider.configuration.required, ["entryId", "apiKey"]);
+  assert.deepEqual(provider.configuration.required, ["apiKey"]);
   assert.equal(provider.configuration.properties.apiKey.secret, true);
+  assert.equal(provider.configuration.properties.entryId, undefined);
 });
-test("uses explicit entry selection and removes command-managed credential workflows", () => {
+test("uses group-name-native registration and removes command-managed credential workflows", () => {
   const commands = manifest.contributes.commands.map((item) => item.command);
-  for (const command of ["manage", "testConnection", "selectManagementEntry", "forgetEntry", "restoreEntry"]) assert.ok(commands.includes(`inceptionCopilot.${command}`));
-  for (const command of ["configureApiKey", "removeApiKey", "completionMenu"]) assert.ok(!commands.includes(`inceptionCopilot.${command}`));
-  for (const setting of ["managementEntry", "autocompleteEntry", "nextEditEntry"]) assert.equal(manifest.contributes.configuration.properties[`inceptionCopilot.${setting}`]?.default, "");
+  for (const command of ["manage", "testConnection", "refreshModels"]) assert.ok(commands.includes(`inceptionCopilot.${command}`));
+  for (const command of [
+    "configureApiKey",
+    "removeApiKey",
+    "completionMenu",
+    "forgetEntry",
+    "restoreEntry",
+    "selectManagementEntry",
+    "selectAutocompleteEntry",
+    "selectNextEditEntry",
+  ]) assert.ok(!commands.includes(`inceptionCopilot.${command}`));
+  for (const setting of ["managementEntry", "autocompleteEntry", "nextEditEntry"]) assert.equal(manifest.contributes.configuration.properties[`inceptionCopilot.${setting}`], undefined);
 });

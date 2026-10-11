@@ -16,16 +16,15 @@
 
 1. Install the extension in VS Code 1.125 or newer with GitHub Copilot Chat available.
 2. Create an API key in [Inception Platform](https://platform.inceptionlabs.ai/dashboard/api-keys).
-3. Open **Chat: Manage Language Models**, add **Inception**, and enter a unique `entryId` (for example `work`) and your API key. Each entry uses only its native credential.
+3. Open **Chat: Manage Language Models**, add **Inception**, name the entry, and enter your API key. Each entry uses only its native credential.
 4. Select **Mercury 2.5** in Copilot Chat.
 
-Use **Inception: Manage Connection** to select the native entry for testing, model refresh and usage. Select entries for autocomplete and next edit independently with **Inception: Select Autocomplete Entry** and **Inception: Select Next Edit Entry**. Blank or unavailable selections send no completion requests; discovery order never chooses an account.
+Use **Inception: Manage Connection** to test the connection, refresh hosted models, and show usage. Inline completions and next edit use the most recently provisioned entry's API key. To use more than one key, add another **Inception** entry with a different name; the entry name is its identity and VS Code namespaces each entry's models per group.
 
-## Major release setup
+## Group-name-native entries
 
-The major release requires native entries with explicit IDs. Command-managed key commands and fallback credentials have been removed. Re-enter keys in **Manage Language Models**, assign a different `entryId` to each entry, and select its models again. No legacy secret, model-ID or usage-state migration is performed. Local usage starts fresh in the new credential scopes. Keep `entryId` unchanged for later key rotations; stale model handles are rejected until VS Code reloads their current configuration.
+Entries need only an API key. Rotating a key in **Manage Language Models** re-scopes the entry's credential automatically, and deleting an entry removes its VS Code-owned credential. No entry IDs, alias blocks, or manual restore steps remain.
 
-Keys are available only after VS Code provisions their entry. After a restart, open the model picker or refresh the native entry before using management or completion commands. Use **Inception: Forget Loaded Entry** to revoke its cached binding and persist an alias-only block through rediscovery and restart. **Inception: Restore Forgotten Entry** explicitly allows fresh provisioning again; it never recovers a cached key. Delete the native entry in **Manage Language Models** to remove its VS Code-owned credential. Required entry IDs must be unique; reusing one ID represents the same entry’s replacement.
 
 ## Features
 
@@ -50,7 +49,7 @@ Inline suggestions come from the Mercury Edit fill-in-the-middle endpoint, separ
 
 Next-edit suggestions watch your recent edits and cursor positions in other files, send a cursor-centered editable region (default 15 lines) plus recent snippets and a diff history to the Inception edit endpoint, and show the predicted change inline. The stable VS Code inline-completion API can only express insertions and single-line replacements, so multi-line rewrites and deletions are skipped rather than approximated.
 
-Next-edit is **off by default** — enable it from the status bar menu or with `inceptionCopilot.nextEdit.enabled`. Autocomplete remains enabled by default; it sends requests only after an autocomplete entry is explicitly selected.
+Next-edit is **off by default** — enable it from the status bar menu or with `inceptionCopilot.nextEdit.enabled`. Autocomplete remains enabled by default and uses the most recently provisioned entry's API key, the same way inline management does.
 
 ## Using both with Copilot
 
@@ -78,7 +77,7 @@ Multiple inline-completion extensions can compete for Tab. For the best experien
 
 ## Usage tracking
 
-The extension tracks tokens and requests locally on this device: every Copilot Chat response plus generated inline autocomplete and next-edit requests accumulate into a per-credential snapshot that survives restarts. The status bar and usage menu show the explicitly selected management entry’s credential totals (**$(graph) Inception …**) with completion feature states in its tooltip, and **Inception: Show Usage** opens one menu with tracked tokens (input, output, cached, reasoning), an estimated spend, the inline-completion toggles and model picker, and a dashboard deep link (**Inception: Open Usage Dashboard** opens the Inception Platform usage page). The `inceptionCopilot.showUsageStatusBar` setting hides the item (the menu stays reachable from the command palette).
+The extension tracks tokens and requests locally on this device: every Copilot Chat response plus generated inline autocomplete and next-edit requests accumulate into a per-credential snapshot that survives restarts. The status bar and usage menu show the most recently provisioned entry's credential totals (**$(graph) Inception …**) with completion feature states in its tooltip, and **Inception: Show Usage** opens one menu with tracked tokens (input, output, cached, reasoning), an estimated spend, the inline-completion toggles and model picker, and a dashboard deep link (**Inception: Open Usage Dashboard** opens the Inception Platform usage page). The `inceptionCopilot.showUsageStatusBar` setting hides the item (the menu stays reachable from the command palette).
 
 Estimates use each model's published rates applied to reported token counts (Mercury 2.5: $0.04 input, $0.004 cached input, $0.15 output per 1M tokens at current launch pricing; Mercury 2 and Mercury Edit 2: $0.25 / $0.025 / $0.75). Counts are device-local: they start when the extension first records usage, exclude other tools sharing your key, and do not reflect Inception's billing or the free-token grant — the [Inception dashboard](https://platform.inceptionlabs.ai/dashboard/logs) is authoritative. No prompts, responses, or API keys are stored; only token counts, model ids, and request outcome metadata.
 
@@ -86,9 +85,6 @@ Estimates use each model's published rates applied to reported token counts (Mer
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `inceptionCopilot.managementEntry` | empty | Native entry for testing, refresh and usage display |
-| `inceptionCopilot.autocompleteEntry` | empty | Native entry for FIM autocomplete |
-| `inceptionCopilot.nextEditEntry` | empty | Native entry for next-edit suggestions |
 | `inceptionCopilot.reasoningEffort` | `medium` | Default effort; the model picker overrides it |
 | `inceptionCopilot.maxOutputTokens` | `16384` | Output budget, capped to the model limit; 0 uses that limit |
 | `inceptionCopilot.requestTimeoutSeconds` | `600` | Total inference timeout |

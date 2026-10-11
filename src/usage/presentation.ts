@@ -16,7 +16,7 @@ export type UsageMenuAction =
   | "toggleNextEdit"
   | "chooseModel"
   | "openCompletionSettings"
-  | "selectEntry";
+  | "provisionEntry";
 
 export interface UsageQuickPickItem extends vscode.QuickPickItem {
   readonly action?: UsageMenuAction;
