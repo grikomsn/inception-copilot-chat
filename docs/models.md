@@ -40,3 +40,28 @@ derived and applied.
 Per-model input, cached-input, and output pricing is shown in the model picker
 when the live catalog provides it; otherwise the bundled snapshot rates apply.
 See [Setup](setup.md) for how usage and spend are tracked.
+
+## Copilot SDK sessions
+
+The **Copilot** session runtime uses a separate model-discovery path from
+ordinary **Local** chat. Its BYOK bridge discovers effort options specifically
+from `configurationSchema.properties.reasoningEffort`. Keep that property
+separate from Context Window and other controls, with the model's supported
+values and a default from that list.
+
+In VS Code 1.141, the SDK picker further restricts efforts to `none`, `minimal`,
+`low`, `medium`, `high`, `xhigh`, `max`, and `ultra`. Each model exposes only the
+intersection with its own supported list. The extension continues translating
+selected efforts to the provider's native request fields.
+
+Inception's `instant` choice remains available in Local chat, but the SDK
+picker filters it out and offers Low, Medium, and High. Use Local chat for
+Instant and the extension's Context Window control; the SDK picker does not
+expose the context control.
+
+After installing an extension update, restart VS Code or reload every open
+window so the shared BYOK bridge receives fresh model metadata.
+
+References: [VS Code BYOK discovery](https://github.com/microsoft/vscode/blob/2a59476c9bfcb90b3ddc372c36762471b7dfad1c/src/vs/workbench/contrib/chat/browser/agentSessions/agentHost/agentHostByokLmHandler.ts),
+[SDK Thinking Level filtering](https://github.com/microsoft/vscode/blob/2a59476c9bfcb90b3ddc372c36762471b7dfad1c/src/vs/platform/agentHost/node/copilot/copilotAgent.ts#L2757),
+and [accepted agent-host effort tiers](https://github.com/microsoft/vscode/blob/2a59476c9bfcb90b3ddc372c36762471b7dfad1c/src/vs/platform/agentHost/common/reasoningEffort.ts).
