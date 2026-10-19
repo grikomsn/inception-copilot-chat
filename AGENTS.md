@@ -15,6 +15,7 @@
 - `src/provider/`: message conversion, request construction, and response reporting.
 - `src/models/catalog.ts`: hosted-model filtering, fallbacks, and display metadata.
 - `src/models/options.ts`: reasoning-effort schema, precedence, and Inception request payload translation.
+- `scripts/refresh-models.mjs`: model-metadata resync automation (report/apply/pr/ci modes).
 - `src/transport/protocol.ts`: fixed endpoints, request identity, and headers.
 - `src/transport/sse.ts`: incremental SSE parsing into text, reasoning, tool-call, and usage events.
 - `src/usage/domain.ts`: provider usage normalization for VS Code.
@@ -26,6 +27,7 @@
 - `npm test` or `npm run check` — compile and run all Node test files.
 - `npm run package` — validate and build the installable VSIX.
 - `npm run watch` — compile continuously; press F5 with the repository launch configuration for an Extension Development Host.
+- `npm run refresh-models` — report hosted-model drift; `--apply` edits bundled metadata, `--pr` opens a resync pull request. The script `require()`s compiled `out/` modules and recompiles automatically when sources are newer than `out/`.
 
 ## Working agreements
 
