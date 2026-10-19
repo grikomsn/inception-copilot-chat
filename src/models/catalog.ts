@@ -1,6 +1,6 @@
-import { MERCURY_2_5_MODEL_COST, MERCURY_MODEL_COST, modelCostFromApi, type ModelCost } from "./pricing";
+import { MERCURY_2_5_MODEL_COST, MERCURY_3_MODEL_COST, MERCURY_MODEL_COST, modelCostFromApi, type ModelCost } from "./pricing";
 
-export const FALLBACK_MODELS = ["mercury-2.5", "mercury-2"] as const;
+export const FALLBACK_MODELS = ["mercury-3", "mercury-2.5", "mercury-2"] as const;
 export const DEFAULT_MAX_INPUT_TOKENS = 128_000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 50_000;
 
@@ -19,6 +19,13 @@ export interface InceptionApiModel {
 }
 export const FALLBACK_MODEL_METADATA: readonly InceptionModelMetadata[] = [
   {
+    id: "mercury-3",
+    version: "3",
+    contextLength: 1_000_000,
+    maxOutputTokens: 131_072,
+    cost: MERCURY_3_MODEL_COST,
+  },
+  {
     id: "mercury-2.5",
     version: "2.5",
     contextLength: 260_000,
@@ -34,7 +41,8 @@ export const FALLBACK_MODEL_METADATA: readonly InceptionModelMetadata[] = [
   },
 ];
 export function isInceptionChatModel(id: string): boolean {
-  return id.startsWith("mercury") && !/(edit|fim|embedding)/i.test(id);
+  // Decide serves a separate decision endpoint and never chat completions.
+  return id.startsWith("mercury") && !/(edit|fim|embedding|decide)/i.test(id);
 }
 export function orderModels(ids: readonly string[]): string[] {
   const preferred = new Map(FALLBACK_MODEL_METADATA.map((model, index) => [model.id, index]));
