@@ -4,8 +4,9 @@
 .codex/**
 docs/**
 assets/cover.jpg
-assets/Inception*/**
 assets/*.zip
+assets/Inception*/**
+test/**
 tmp/**
 .env*
 .gitignore
@@ -23,4 +24,3 @@ tsconfig.json
 package-lock.json
 *.vsix
 .DS_Store
-test/**
