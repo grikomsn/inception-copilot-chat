@@ -2,7 +2,7 @@
   "name": "inception-copilot-chat",
   "displayName": "Inception for GitHub Copilot Chat",
   "description": "Use Inception Mercury models in GitHub Copilot Chat with your Inception API key.",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "publisher": "grikomsn",
   "icon": "assets/icon.png",
   "license": "MIT",
