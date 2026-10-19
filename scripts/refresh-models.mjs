@@ -2,7 +2,7 @@
 // Model-metadata resync helper for Inception.
 // Probes the live /v1/chat/completions/models catalog, diffs it against the
 // bundled fallback metadata compiled from src/models, applies mechanical
-// refreshes to the two bundled Mercury entries (context, output ceiling, and
+// refreshes to the three bundled Mercury entries (context, output ceiling, and
 // published pricing), and can open the pull request. New model families and
 // fallback membership changes are reported for manual review.
 //
@@ -26,6 +26,13 @@ const PRICING_FILE = path.join(ROOT, "src/models/pricing.ts");
 const METADATA_START = "export const FALLBACK_MODEL_METADATA: readonly InceptionModelMetadata[] = [\n";
 const METADATA_END = "];\n";
 const CHANGESET_SUMMARY = "Resync bundled Inception fallback metadata with the live catalog.";
+
+/** Cached-input/output pricing constants compiled from src/models/pricing.ts. */
+const PRICING_CONSTANTS = {
+  "mercury-3": "MERCURY_3_MODEL_COST",
+  "mercury-2.5": "MERCURY_2_5_MODEL_COST",
+  "mercury-2": "MERCURY_MODEL_COST",
+};
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes("--apply") || argv.includes("--pr");
@@ -197,7 +204,7 @@ const main = async () => {
     }
     for (const change of changes) {
       if (!change.cost) continue;
-      const constantName = change.id === "mercury-2.5" ? "MERCURY_2_5_MODEL_COST" : "MERCURY_MODEL_COST";
+      const constantName = PRICING_CONSTANTS[change.id] ?? "MERCURY_MODEL_COST";
       if (!sameCost(change.cost, pricing[constantName]) && editPricingConstant(constantName, change.cost)) {
         if (!changedFiles.includes("src/models/pricing.ts")) changedFiles.push("src/models/pricing.ts");
       }

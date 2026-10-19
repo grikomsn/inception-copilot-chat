@@ -27,8 +27,17 @@ export const MERCURY_MODEL_COST: ModelCost = { input: 0.25, cacheRead: 0.025, ou
  */
 export const MERCURY_2_5_MODEL_COST: ModelCost = { input: 0.04, cacheRead: 0.004, output: 0.15 };
 
+/**
+ * Published Mercury 3 rates (USD per 1M tokens): $0.10 input, $0.01 cached
+ * input, $0.35 output at the 50%-off launch price ($0.20, $0.02, and $0.70
+ * regular); see docs.inceptionlabs.ai/get-started/models. Only applied while
+ * live discovery advertises its all-zero placeholder rates.
+ */
+export const MERCURY_3_MODEL_COST: ModelCost = { input: 0.1, cacheRead: 0.01, output: 0.35 };
+
 /** Documented fallback rates for a known model id; live discovery overrides these. */
 export function publishedModelCost(id: string): ModelCost | undefined {
+  if (id === "mercury-3") return MERCURY_3_MODEL_COST;
   if (id === "mercury-2.5") return MERCURY_2_5_MODEL_COST;
   if (id === "mercury-2" || id.startsWith("mercury-edit")) return MERCURY_MODEL_COST;
   return undefined;
@@ -50,6 +59,10 @@ export function modelCostFromApi(value: unknown): ModelCost | undefined {
   const input = nonNegativeNumber(pricing.prompt);
   const output = nonNegativeNumber(pricing.completion);
   if (input === undefined || output === undefined) return undefined;
+  // Zero input and output rates are an unpublished placeholder (currently the
+  // Mercury 3 launch payload) rather than a genuine free tier; documented
+  // published rates must win over an apparent free model.
+  if (input === 0 && output === 0) return undefined;
   const cacheRead = nonNegativeNumber(pricing.input_cache_reads);
   return {
     input: perMillion(input),

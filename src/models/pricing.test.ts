@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { modelCostFromApi, modelPricingFields, costCategory, inceptionModelCost, publishedModelCost, MERCURY_2_5_MODEL_COST, MERCURY_MODEL_COST } from "./pricing";
+import { modelCostFromApi, modelPricingFields, costCategory, inceptionModelCost, publishedModelCost, MERCURY_2_5_MODEL_COST, MERCURY_3_MODEL_COST, MERCURY_MODEL_COST } from "./pricing";
 
 test("converts Inception per-token API rates to per-million costs", () => {
   assert.deepEqual(
@@ -19,6 +19,8 @@ test("converts Inception per-token API rates to per-million costs", () => {
 test("drops malformed pricing instead of guessing", () => {
   assert.equal(modelCostFromApi(undefined), undefined);
   assert.equal(modelCostFromApi({ prompt: "0.25" }), undefined);
+  // Zero input and output rates are an unpublished placeholder, not a free tier.
+  assert.equal(modelCostFromApi({ prompt: "0", completion: "0" }), undefined);
   assert.equal(modelCostFromApi({ prompt: "invalid", completion: "0.00000075" }), undefined);
   assert.equal(modelCostFromApi({ prompt: "-1", completion: "0.00000075" }), undefined);
   assert.equal(inceptionModelCost("mercury-2", undefined), undefined);
@@ -49,10 +51,18 @@ test("converts per-million rates to VS Code pricing fields", () => {
     cacheCost: 0,
     priceCategory: "low",
   });
+  assert.deepEqual(modelPricingFields(MERCURY_3_MODEL_COST), {
+    pricing: "In: $0.1 · Out: $0.35 /1M tokens",
+    inputCost: 10,
+    outputCost: 35,
+    cacheCost: 1,
+    priceCategory: "low",
+  });
   assert.equal(modelPricingFields(undefined), undefined);
 });
 
 test("looks up documented fallback rates by model id", () => {
+  assert.equal(publishedModelCost("mercury-3"), MERCURY_3_MODEL_COST);
   assert.equal(publishedModelCost("mercury-2.5"), MERCURY_2_5_MODEL_COST);
   assert.equal(publishedModelCost("mercury-2"), MERCURY_MODEL_COST);
   assert.equal(publishedModelCost("mercury-edit-2"), MERCURY_MODEL_COST);

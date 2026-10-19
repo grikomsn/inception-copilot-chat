@@ -17,7 +17,7 @@
 1. Install the extension in VS Code 1.125 or newer with GitHub Copilot Chat available.
 2. Create an API key in [Inception Platform](https://platform.inceptionlabs.ai/dashboard/api-keys).
 3. Open **Chat: Manage Language Models**, add **Inception**, name the entry, and enter your API key. Each entry uses only its native credential.
-4. Select **Mercury 2.5** in Copilot Chat.
+4. Select **Mercury 3** in Copilot Chat.
 
 Use **Inception: Manage Connection** to test the connection, refresh hosted models, and show usage. Inline completions and next edit use the most recently provisioned entry's API key. To use more than one key, add another **Inception** entry with a different name; the entry name is its identity and VS Code namespaces each entry's models per group.
 
@@ -28,7 +28,7 @@ Entries need only an API key. Rotating a key in **Manage Language Models** re-sc
 
 ## Features
 
-- Live chat-only model discovery, with Mercury 2.5 and Mercury 2 fallbacks when discovery is unavailable.
+- Live chat-only model discovery, with Mercury 3, Mercury 2.5, and Mercury 2 fallbacks when discovery is unavailable.
 - Streaming text, reasoning and parallel tool calling, usage reporting, cancellation, and total/idle request timeouts.
 - Mercury reasoning choices: **Instant**, **Low**, **Medium** (default), and **High**.
 - Model picker pricing from live discovery (per-million input/output/cached rates) shown in the picker tooltip and fields.
@@ -39,7 +39,7 @@ Entries need only an API key. Rotating a key in **Manage Language Models** re-sc
 - Inline-completion controls (toggle either feature, switch the completion model, open settings) live in the merged status bar menu (**Inception: Show Usage**).
 - Optional outcome feedback: accepted suggestions are reported to Inception to improve model quality, sending only outcome metadata (`inceptionCopilot.sendFeedback`).
 
-Mercury 2.5 currently advertises a 260,000-token context window and 65,536-token maximum output. Mercury 2 advertises 128,000 input tokens and 50,000 output tokens. The default request output budget is 16,384 tokens. Live model limits override fallback metadata. Token counting is an estimate (characters divided by four).
+Mercury 3 currently advertises a 1,000,000-token context window and 131,072-token maximum output. Mercury 2.5 advertises a 260,000-token context window and 65,536-token maximum output. Mercury 2 advertises 128,000 input tokens and 50,000 output tokens. The default request output budget is 16,384 tokens. Live model limits override fallback metadata. Token counting is an estimate (characters divided by four).
 
 ## Autocomplete
 
@@ -79,7 +79,7 @@ Multiple inline-completion extensions can compete for Tab. For the best experien
 
 The extension tracks tokens and requests locally on this device: every Copilot Chat response plus generated inline autocomplete and next-edit requests accumulate into a per-credential snapshot that survives restarts. The status bar and usage menu show the most recently provisioned entry's credential totals (**$(graph) Inception …**) with completion feature states in its tooltip, and **Inception: Show Usage** opens one menu with tracked tokens (input, output, cached, reasoning), an estimated spend, the inline-completion toggles and model picker, and a dashboard deep link (**Inception: Open Usage Dashboard** opens the Inception Platform usage page). The `inceptionCopilot.showUsageStatusBar` setting hides the item (the menu stays reachable from the command palette).
 
-Estimates use each model's published rates applied to reported token counts (Mercury 2.5: $0.04 input, $0.004 cached input, $0.15 output per 1M tokens at current launch pricing; Mercury 2 and Mercury Edit 2: $0.25 / $0.025 / $0.75). Counts are device-local: they start when the extension first records usage, exclude other tools sharing your key, and do not reflect Inception's billing or the free-token grant — the [Inception dashboard](https://platform.inceptionlabs.ai/dashboard/logs) is authoritative. No prompts, responses, or API keys are stored; only token counts, model ids, and request outcome metadata.
+Estimates use each model's published rates applied to reported token counts (Mercury 3: $0.10 input, $0.01 cached input, $0.35 output per 1M tokens at the 50%-off launch rate; Mercury 2.5: $0.04 input, $0.004 cached input, $0.15 output at current launch pricing; Mercury 2 and Mercury Edit 2: $0.25 / $0.025 / $0.75). Counts are device-local: they start when the extension first records usage, exclude other tools sharing your key, and do not reflect Inception's billing or the free-token grant — the [Inception dashboard](https://platform.inceptionlabs.ai/dashboard/logs) is authoritative. No prompts, responses, or API keys are stored; only token counts, model ids, and request outcome metadata.
 
 ## Settings
 
