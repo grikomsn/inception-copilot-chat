@@ -92,6 +92,8 @@ Estimates use each model's published rates applied to reported token counts (Mer
 | `inceptionCopilot.catalogCacheMinutes` | `5` | Model catalog refresh interval |
 | `inceptionCopilot.debugLogging` | `false` | Metadata-only diagnostics |
 
+Context token counts are estimates. Tool-result text, tool arguments, thinking, and image inputs are included in context budgeting. If the service rejects a full context window, run `/compact` in Copilot Chat, reduce attachments or tool output, or start a new chat.
+
 ## Development
 
 Use Node.js 22+ and npm. Run `npm ci`, `npm run check`, and `npm run package`. Press F5 to launch the Extension Development Host. Tests are colocated under `src/`. See [models](docs/models.md), [development](docs/development.md), and [security](docs/security.md).
