@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { estimateChatTokens } from "./provider/token-count";
+import { withContextOverflowHint } from "./provider/context-error";
 import { Credentials, apiKeyFromConfiguration, credentialReference } from "./auth/auth";
 import { messageOf } from "./errors";
 import {
@@ -307,7 +309,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       if (token.isCancellationRequested) return;
       if (timedOut === "idle") throw new Error(`Inception request for ${model.rawModelId} received no data for ${idleTimeoutSeconds} seconds`);
       if (timedOut === "total") throw new Error(`Inception request for ${model.rawModelId} exceeded ${timeoutSeconds} seconds`);
-      throw error;
+      throw withContextOverflowHint(error);
     } finally {
       reporter.finish();
       controller.signal.removeEventListener("abort", abortBody);
@@ -324,8 +326,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     value: string | vscode.LanguageModelChatRequestMessage,
     _token: vscode.CancellationToken,
   ): Promise<number> {
-    const text = typeof value === "string" ? value : messageToText(value);
-    return Math.max(1, Math.ceil(text.length / 4));
+    return estimateChatTokens(value);
   }
 
   async testConnection(): Promise<{ model: string; reasoningEffort: ReasoningEffort; text: string }> {
