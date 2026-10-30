@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.6
+
+### Patch Changes
+
+- 6c855bd: Add bounded pre-stream retries for transient HTTP statuses (429/502/503/504) and network failures, honoring Retry-After, to model discovery, connection tests, and chat requests.
+
 ## 2.0.5
 
 ### Patch Changes
