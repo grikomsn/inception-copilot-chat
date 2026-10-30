@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { estimateChatTokens } from "./provider/token-count";
 import { withContextOverflowHint } from "./provider/context-error";
+import { isTransientNetworkError, isTransientServerError, retryDelayMs } from "./provider/retry";
 import { Credentials, apiKeyFromConfiguration, credentialReference } from "./auth/auth";
 import { messageOf } from "./errors";
 import {
@@ -267,7 +268,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       if (this.debugLogging) {
         this.output.appendLine(`[request] model=${model.rawModelId} effort=${reasoningEffort} initiator=${options.requestInitiator ?? "unknown"}`);
       }
-      const response = await this.fetcher(INCEPTION_ENDPOINTS.chat, {
+      const response = await this.fetchWithRetry(INCEPTION_ENDPOINTS.chat, {
         method: "POST",
         headers: this.requestHeaders(apiKey, "text/event-stream"),
         body: JSON.stringify(requestBody),
@@ -341,7 +342,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
       undefined,
       this.configuration.get("reasoningEffort", DEFAULT_REASONING_EFFORT),
     );
-    const response = await this.fetcher(INCEPTION_ENDPOINTS.chat, {
+    const response = await this.fetchWithRetry(INCEPTION_ENDPOINTS.chat, {
       method: "POST",
       headers: this.requestHeaders(apiKey, "application/json"),
       signal: AbortSignal.timeout(60_000),
@@ -366,7 +367,7 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
 
   private async fetchModels(apiKey: string): Promise<InceptionModelMetadata[]> {
     if (!apiKey) throw new Error("Inception API key is not configured");
-    const response = await this.fetcher(INCEPTION_ENDPOINTS.models, {
+    const response = await this.fetchWithRetry(INCEPTION_ENDPOINTS.models, {
       headers: this.requestHeaders(apiKey, "application/json, application/problem+json"),
       signal: AbortSignal.timeout(30_000),
     });
@@ -414,5 +415,38 @@ export class InceptionProvider implements vscode.LanguageModelChatProvider<Incep
     return inceptionHeaders(apiKey, accept, this.userAgent);
   }
 
+  /** Pre-stream retry loop: transient HTTP statuses and network failures only. */
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const response = await this.fetcher(url, init);
+        if (attempt >= 2 || !isTransientServerError(response.status)) return response;
+        const delay = retryDelayMs(attempt, response.headers.get("retry-after"));
+        this.output.appendLine(`[retry] transient HTTP ${response.status}; attempt=${attempt + 2} delayMs=${delay}`);
+        await response.body?.cancel().catch(() => undefined);
+        await waitForRetry(delay, init.signal);
+      } catch (error) {
+        if (attempt >= 2 || !isTransientNetworkError(error)) throw error;
+        const delay = retryDelayMs(attempt);
+        this.output.appendLine(`[retry] transient network failure; attempt=${attempt + 2} delayMs=${delay}`);
+        await waitForRetry(delay, init.signal);
+      }
+    }
+  }
 
+}
+
+async function waitForRetry(milliseconds: number, signal: AbortSignal | null | undefined): Promise<void> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 }
