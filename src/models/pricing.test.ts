@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { modelCostFromApi, modelPricingFields, costCategory, inceptionModelCost, publishedModelCost, MERCURY_2_5_MODEL_COST, MERCURY_3_MODEL_COST, MERCURY_MODEL_COST } from "./pricing";
+import { modelCostFromApi, modelPricingFields, costCategory, inceptionModelCost, publishedModelCost, MERCURY_3_MODEL_COST, MERCURY_MODEL_COST } from "./pricing";
 
 test("converts Inception per-token API rates to per-million costs", () => {
   assert.deepEqual(
@@ -44,13 +44,6 @@ test("converts per-million rates to VS Code pricing fields", () => {
     cacheCost: 3,
     priceCategory: "low",
   });
-  assert.deepEqual(modelPricingFields(MERCURY_2_5_MODEL_COST), {
-    pricing: "In: $0.04 · Out: $0.15 /1M tokens",
-    inputCost: 4,
-    outputCost: 15,
-    cacheCost: 0,
-    priceCategory: "low",
-  });
   assert.deepEqual(modelPricingFields(MERCURY_3_MODEL_COST), {
     pricing: "In: $0.1 · Out: $0.35 /1M tokens",
     inputCost: 10,
@@ -63,9 +56,11 @@ test("converts per-million rates to VS Code pricing fields", () => {
 
 test("looks up documented fallback rates by model id", () => {
   assert.equal(publishedModelCost("mercury-3"), MERCURY_3_MODEL_COST);
-  assert.equal(publishedModelCost("mercury-2.5"), MERCURY_2_5_MODEL_COST);
   assert.equal(publishedModelCost("mercury-2"), MERCURY_MODEL_COST);
   assert.equal(publishedModelCost("mercury-edit-2"), MERCURY_MODEL_COST);
+  // Retired ids no longer publish picker rates, but the Mercury 2 constant
+  // remains the usage-estimate fallback.
+  assert.equal(publishedModelCost("mercury-2.5"), undefined);
   assert.equal(publishedModelCost("mercury-9"), undefined);
 });
 

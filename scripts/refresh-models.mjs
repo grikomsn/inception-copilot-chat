@@ -30,7 +30,8 @@ const CHANGESET_SUMMARY = "Resync bundled Inception fallback metadata with the l
 /** Cached-input/output pricing constants compiled from src/models/pricing.ts. */
 const PRICING_CONSTANTS = {
   "mercury-3": "MERCURY_3_MODEL_COST",
-  "mercury-2.5": "MERCURY_2_5_MODEL_COST",
+  // Mercury 2/2.5 are retired from the picker (see RETIRED_MODEL_IDS in
+  // src/models/catalog.ts); MERCURY_MODEL_COST remains the usage fallback.
   "mercury-2": "MERCURY_MODEL_COST",
 };
 

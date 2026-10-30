@@ -11,20 +11,26 @@ authoritative whenever available.
 
 ## Models
 
-The catalog typically exposes the following models:
+The catalog exposes the following chat models:
 
 - **Mercury 3** (`mercury-3`) — the default chat model, with a 1M-token
   context window (~869K usable input), up to 131,072 output tokens, and
   configurable reasoning effort. Priced at $0.10 input / $0.01 cached input /
   $0.35 output per 1M tokens at the 50%-off launch rate ($0.20 / $0.02 /
   $0.70 regular).
-- **Mercury 2.5** (`mercury-2.5`) — a previous-generation reasoning chat model
-  with a 260K-token context window (~194K usable input) and configurable
-  reasoning effort.
-- **Mercury 2** (`mercury-2`) — a smaller, faster chat model with a 128K-token
-  context window (~78K usable input).
 - **Mercury Edit 2** (`mercury-edit-2`) — the fill-in-the-middle model used for
   inline autocomplete and next-edit suggestions.
+
+## Mercury 2 and 2.5 retirement
+
+Inception closed Mercury 2 and Mercury 2.5 to new users when Mercury 3
+launched on 2026-10-19, with existing-customer access scheduled to end on
+**2026-11-15** (enterprise agreements are separate). The extension filters
+both ids out of discovery and the bundled fallback, mirroring the service's
+own deprecation, and Mercury 3 remains the default. See Inception's [models
+page](https://www.inceptionlabs.ai/models) for the authoritative schedule.
+The published Mercury 2 rates remain the default basis for local usage
+cost estimates and still cover Mercury Edit 2.
 
 Enterprise-only Mercury Voice and the decisions-only Mercury Decide endpoints
 are not part of chat model discovery.

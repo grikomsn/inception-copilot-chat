@@ -64,11 +64,6 @@ test("estimates cost from published Mercury rates", () => {
     completion_tokens: 100,
     prompt_tokens_details: { cached_tokens: 400 },
   }, "mercury-2"), 235_000);
-  assert.equal(estimateCostUsdNanos({
-    prompt_tokens: 1000,
-    completion_tokens: 100,
-    prompt_tokens_details: { cached_tokens: 400 },
-  }, "mercury-2.5"), 40_600);
   assert.equal(estimateCostUsdNanos({ prompt_tokens: 1000 }), undefined);
   assert.equal(estimateCostUsdNanos({
     prompt_tokens: 100,
