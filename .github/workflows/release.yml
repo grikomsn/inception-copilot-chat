@@ -35,9 +35,9 @@ jobs:
         id: changesets
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: npm run version
-          commit: 'chore: version extension'
-          title: 'chore: version extension'
+          version-script: npm run version
+          commit-message: 'chore: version extension'
+          pr-title: 'chore: version extension'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
