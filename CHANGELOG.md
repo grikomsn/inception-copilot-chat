@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.9
+
+### Patch Changes
+
+- 3e28e25: Announce the Inception Mercury API wind-down: the service stays available through 28 December 2026 and stops permanently after it. README and docs now carry shutdown notices, and the repository is archived.
+
 ## 2.0.8
 
 ### Patch Changes
