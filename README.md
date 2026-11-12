@@ -6,27 +6,38 @@
 
 <p align="center">Use Inception Mercury models directly from the GitHub Copilot Chat model picker in Visual Studio Code.</p>
 
+> [!WARNING]
+> **This extension is no longer maintained.** Inception is winding down the Mercury API: the service stays fully available through **28 December 2026**, after which API keys, model discovery, and inference stop working and submitted data is deleted. This repository is archived for reference.
+
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=grikomsn.inception-copilot-chat"><img src="https://img.shields.io/visual-studio-marketplace/v/grikomsn.inception-copilot-chat?style=flat-square&logo=visualstudiocode&label=Marketplace" alt="Visual Studio Marketplace version"></a>
   <a href="https://github.com/grikomsn/inception-copilot-chat/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/grikomsn/inception-copilot-chat/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
   <a href="https://github.com/grikomsn/inception-copilot-chat/blob/main/LICENSE"><img src="https://img.shields.io/github/license/grikomsn/inception-copilot-chat?style=flat-square" alt="MIT license"></a>
 </p>
 
-## Setup
+## What happened
 
-1. Install the extension in VS Code 1.125 or newer with GitHub Copilot Chat available.
-2. Create an API key in [Inception Platform](https://platform.inceptionlabs.ai/dashboard/api-keys).
-3. Open **Chat: Manage Language Models**, add **Inception**, name the entry, and enter your API key. Each entry uses only its native credential.
-4. Select **Mercury 3** in Copilot Chat.
+On 12 November 2026 Inception announced the wind-down of the Mercury API. The service remains fully available through **28 December 2026**. After that date you will no longer have access to the service or any data submitted to the platform, so retrieve anything you need from the [Inception dashboard](https://platform.inceptionlabs.ai/dashboard/logs) before then; questions go to Inception support by replying to their announcement email.
 
-Use **Inception: Manage Connection** to test the connection, refresh hosted models, and show usage. Inline completions and next edit use the most recently provisioned entry's API key. To use more than one key, add another **Inception** entry with a different name; the entry name is its identity and VS Code namespaces each entry's models per group.
+This extension is archived for reference. It keeps working until the shutdown date and stops permanently after it.
+
+## Setup (historical)
+
+1. ~~Install the extension in VS Code 1.125 or newer with GitHub Copilot Chat available.~~
+2. ~~Create an API key in [Inception Platform](https://platform.inceptionlabs.ai/dashboard/api-keys).~~
+3. ~~Open **Chat: Manage Language Models**, add **Inception**, name the entry, and enter your API key. Each entry uses only its native credential.~~
+4. ~~Select **Mercury 3** in Copilot Chat.~~
+
+These steps keep working until 28 December 2026, when Inception shuts the Mercury API down.
+
+Use **Inception: Manage Connection** to test the connection, refresh hosted models, and show usage. These commands stop working after 28 December 2026. Inline completions and next edit use the most recently provisioned entry's API key. To use more than one key, add another **Inception** entry with a different name; the entry name is its identity and VS Code namespaces each entry's models per group.
 
 ## Group-name-native entries
 
 Entries need only an API key. Rotating a key in **Manage Language Models** re-scopes the entry's credential automatically, and deleting an entry removes its VS Code-owned credential. No entry IDs, alias blocks, or manual restore steps remain.
 
 
-## Features
+## Features (historical)
 
 - Live chat-only model discovery, with Mercury 3, Mercury 2.5, and Mercury 2 fallbacks when discovery is unavailable.
 - Streaming text, reasoning and parallel tool calling, usage reporting, cancellation, and total/idle request timeouts.

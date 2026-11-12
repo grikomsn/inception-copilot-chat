@@ -1,5 +1,8 @@
 # Models
 
+> [!WARNING]
+> The hosted catalog disappears on 28 December 2026, when Inception winds down the Mercury API; live discovery and inference become unavailable.
+
 The extension discovers the current Inception model catalog live from
 `https://api.inceptionlabs.ai/v1/chat/completions/models`. Each model entry
 carries its own context window, maximum output length, and per-model pricing,

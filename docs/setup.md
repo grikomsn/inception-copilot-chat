@@ -1,5 +1,8 @@
 # Setup
 
+> [!WARNING]
+> Inception is winding down the Mercury API: the service shuts down on 28 December 2026. The steps below are kept for historical reference; after that date API keys are no longer accepted and no requests can succeed.
+
 See the [README](../README.md#setup) for native provider configuration, commands, and settings. API keys are available from [Inception Platform](https://platform.inceptionlabs.ai/dashboard/api-keys).
 
 ## Context window size

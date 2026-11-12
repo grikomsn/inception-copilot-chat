@@ -1,5 +1,8 @@
 # API key and security
 
+> [!WARNING]
+> Inception is winding down the Mercury API: the service shuts down on 28 December 2026. The endpoints below stop accepting requests after that date. The security model is kept for historical reference and for anyone reusing this code against a compatible endpoint.
+
 ## Credential storage
 
 All API keys belong to native entries in **Manage Language Models** and are supplied through VS Code's secret provider configuration. The extension holds provisioned keys in memory only; it does not read or write a command-managed key or mirror secrets into workspace settings, files, logs, or global state.
